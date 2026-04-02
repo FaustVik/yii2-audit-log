@@ -1,0 +1,7 @@
+parameters:
+    ignoreErrors:
+            # Yii2 framework calls
+            - '#Call to static method createObject\(\) on an unknown class Yii#'
+            - '#Access to static property \$app on an unknown class Yii#'
+            # Type narrowing warnings
+            - '#Right side of && is always true#'
