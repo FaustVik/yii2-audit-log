@@ -7,10 +7,10 @@
     "require": {
         "php": ">=8.2",
         "psr/log": "^3.0",
-        "yiisoft/yii2": "^2.0.51",
-        "yidas/yii2-bower-asset": "*"
+        "yiisoft/yii2": "^2.0.51"
     },
     "require-dev": {
+        "yidas/yii2-bower-asset": "*",
         "friendsofphp/php-cs-fixer": "^3.0",
         "phpstan/phpstan": "^2.0",
         "phpunit/phpunit": "^11.0",
