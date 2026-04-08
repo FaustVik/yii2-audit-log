@@ -50,6 +50,8 @@ yii migrate
 
 Добавьте в `config/web.php` или `config/console.php`:
 
+### Вариант 1: Простая конфигурация (через массивы)
+
 ```php
 'container' => [
     'singletons' => [
@@ -82,6 +84,45 @@ yii migrate
     ]
 ]
 ```
+
+### Вариант 2: Расширенная конфигурация (через callback)
+
+Используйте этот вариант, если вам нужны дополнительные параметры (`errorMode`, `resolveExpressions` и др.) или вы хотите разделить регистрацию зависимостей:
+
+```php
+use FaustVik\AuditLog\Core\Contracts\AuditLoggerInterface;
+use FaustVik\AuditLog\Core\Contracts\AuditStorageInterface;
+use FaustVik\AuditLog\Core\Contracts\ContextProviderInterface;
+use FaustVik\AuditLog\Core\Enums\AuditErrorMode;
+use FaustVik\AuditLog\Yii2\Adapter\Yii2AuditLogger;
+
+'container' => [
+    'definitions' => [
+        ContextProviderInterface::class => [
+            'class' => \FaustVik\AuditLog\Yii2\Adapter\Yii2ContextProvider::class,
+            'userTypeMapping' => ['admin/*' => 'admin'],
+            'defaultUserType' => 'admin',
+        ],
+        AuditStorageInterface::class => [
+            'class' => \FaustVik\AuditLog\Yii2\Adapter\Yii2DatabaseStorage::class,
+            'logTableSuffix' => '_log',
+        ],
+    ],
+    'singletons' => [
+        AuditLoggerInterface::class => function (\yii\di\Container $container): AuditLoggerInterface {
+            return new Yii2AuditLogger(
+                storage: $container->get(AuditStorageInterface::class),
+                contextProvider: $container->get(ContextProviderInterface::class),
+                systemExcludeAttributes: ['created_at', 'updated_at', 'date_created', 'date_updated'],
+                resolveExpressions: true,
+                errorMode: AuditErrorMode::Log,  // Логировать ошибки вместо игнорирования
+            );
+        },
+    ],
+]
+```
+
+> **Примечание:** Вариант 2 полезен, когда вам нужно явно контролировать создание экземпляра `Yii2AuditLogger` с дополнительными параметрами, которые не указаны в базовой конфигурации (например, `errorMode`).
 
 ## Следующие шаги
 

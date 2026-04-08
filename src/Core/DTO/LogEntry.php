@@ -42,7 +42,7 @@ final class LogEntry
     }
 
     /**
-     * Convert to array for saving
+     * Convert to array for database storage
      *
      * @return array<string, mixed>
      */
@@ -50,7 +50,6 @@ final class LogEntry
     {
         return [
             'entity_id' => $this->entityId,
-            'entity_class' => $this->entityClass,
             'operation' => $this->operation->value,
             'user_id' => $this->userId,
             'user_type' => $this->userType,

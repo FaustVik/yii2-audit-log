@@ -75,7 +75,6 @@ final class LogEntryTest extends TestCase
 
         $this->assertSame([
             'entity_id' => 42,
-            'entity_class' => 'App\Models\User',
             'operation' => 'UPDATE',
             'user_id' => 1,
             'user_type' => 'admin',

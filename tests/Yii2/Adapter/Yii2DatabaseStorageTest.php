@@ -82,7 +82,6 @@ final class Yii2DatabaseStorageTest extends TestCase
 
         // Verify data
         $this->assertSame(42, $capturedData['entity_id']);
-        $this->assertSame('App\Models\User', $capturedData['entity_class']);
         $this->assertSame('UPDATE', $capturedData['operation']);
         $this->assertSame(1, $capturedData['user_id']);
         $this->assertSame('admin', $capturedData['user_type']);
@@ -148,7 +147,6 @@ final class Yii2DatabaseStorageTest extends TestCase
 
         // Non-null values should be present
         $this->assertArrayHasKey('entity_id', $capturedData);
-        $this->assertArrayHasKey('entity_class', $capturedData);
         $this->assertArrayHasKey('operation', $capturedData);
         $this->assertArrayHasKey('user_type', $capturedData);
         $this->assertArrayHasKey('created_at', $capturedData);
