@@ -1,5 +1,11 @@
 .idea/
 vendor/
 var/
+.qwen/
+.mimocode/
 
 composer.lock
+commit-message.txt
+CODE_REVIEW.md
+REMAINING_ISSUES.md
+AGENTS.md
