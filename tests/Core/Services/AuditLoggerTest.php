@@ -151,6 +151,8 @@ final class AuditLoggerTest extends TestCase
             entityId: 1,
             operation: Operation::Insert,
         );
+
+        $this->addToAssertionCount(1);
     }
 
     #[Test]
@@ -222,6 +224,8 @@ final class AuditLoggerTest extends TestCase
             entityId: 1,
             operation: Operation::Insert,
         );
+
+        $this->addToAssertionCount(1);
     }
 
     #[Test]
