@@ -565,6 +565,84 @@ final class AuditLogBehaviorTest extends TestCase
     }
 
     // ============================================================
+    // Group F2: customFields — model argument (Fix)
+    // ============================================================
+
+    #[Test]
+    public function customFieldsCallableShouldReceiveModel(): void
+    {
+        $owner = $this->createOwner(['name' => 'John'], pk: 42);
+
+        $service = $this->createMock(AuditLoggerInterface::class);
+        $service
+            ->method('isEnabledForEntity')
+            ->willReturn(true);
+
+        $capturedCustomData = null;
+        $service
+            ->method('log')
+            ->willReturnCallback(function (
+                string $entityClass,
+                int|string $entityId,
+                Operation $operation,
+                array $changedAttributes = [],
+                array $customData = [],
+            ) use (&$capturedCustomData): void {
+                $capturedCustomData = $customData;
+            });
+
+        $behavior = $this->createBehavior([
+            'auditService' => $service,
+            'logInsert' => true,
+            'customFields' => [
+                'owner_name' => fn (StubActiveRecord $model) => $model->getAttributes()['name'] ?? 'unknown',
+            ],
+        ]);
+        $behavior->attach($owner);
+
+        $behavior->afterInsert();
+
+        $this->assertSame(['owner_name' => 'John'], $capturedCustomData);
+    }
+
+    #[Test]
+    public function customFieldsCallableWithoutArgumentsShouldStillWork(): void
+    {
+        $owner = $this->createOwner(pk: 1);
+
+        $service = $this->createMock(AuditLoggerInterface::class);
+        $service
+            ->method('isEnabledForEntity')
+            ->willReturn(true);
+
+        $capturedCustomData = null;
+        $service
+            ->method('log')
+            ->willReturnCallback(function (
+                string $entityClass,
+                int|string $entityId,
+                Operation $operation,
+                array $changedAttributes = [],
+                array $customData = [],
+            ) use (&$capturedCustomData): void {
+                $capturedCustomData = $customData;
+            });
+
+        $behavior = $this->createBehavior([
+            'auditService' => $service,
+            'logInsert' => true,
+            'customFields' => [
+                'static_value' => fn () => 'hardcoded',
+            ],
+        ]);
+        $behavior->attach($owner);
+
+        $behavior->afterInsert();
+
+        $this->assertSame(['static_value' => 'hardcoded'], $capturedCustomData);
+    }
+
+    // ============================================================
     // Group G: errorHandler
     // ============================================================
 

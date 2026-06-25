@@ -441,6 +441,48 @@ final class Yii2ContextProviderTest extends TestCase
     }
 
     // ============================================================
+    // Group G2: getUserType() — route mapping validation (Fix 6)
+    // ============================================================
+
+    #[Test]
+    public function getUserTypeShouldRejectInvalidRouteMappingValue(): void
+    {
+        $module = $this->createStubModule('admin');
+        $controller = $this->createStubController('admin/settings', $module);
+
+        $app = $this->createStubApp();
+        $app->controller = $controller;
+        \Yii::$app = $app;
+
+        $provider = new Yii2ContextProvider(
+            userTypeMapping: ['admin/*' => 'superadmin'],
+            allowedUserTypes: ['admin', 'user'],
+            defaultUserType: 'user',
+        );
+
+        // 'superadmin' is not in allowedUserTypes, should fall through
+        $this->assertSame('admin', $provider->getUserType());
+    }
+
+    #[Test]
+    public function getUserTypeShouldAcceptValidRouteMappingValue(): void
+    {
+        $module = $this->createStubModule('api');
+        $controller = $this->createStubController('api/v1/data', $module);
+
+        $app = $this->createStubApp();
+        $app->controller = $controller;
+        \Yii::$app = $app;
+
+        $provider = new Yii2ContextProvider(
+            userTypeMapping: ['api/*' => 'api'],
+            allowedUserTypes: ['admin', 'user', 'api'],
+        );
+
+        $this->assertSame('api', $provider->getUserType());
+    }
+
+    // ============================================================
     // Group H: Configuration
     // ============================================================
 

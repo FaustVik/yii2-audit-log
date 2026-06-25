@@ -381,4 +381,27 @@ final class Yii2DatabaseStorageTest extends TestCase
         $this->assertSame('entityId', $reflection->getParameters()[1]->getName());
         $this->assertSame('limit', $reflection->getParameters()[2]->getName());
     }
+
+    // ============================================================
+    // Tests for orderBy sanitization (Fix 8)
+    // ============================================================
+
+    #[Test]
+    public function getLogTableNameShouldHandleNonExistentClass(): void
+    {
+        $storage = new Yii2DatabaseStorage('_log');
+
+        // Should not throw ReflectionException
+        $result = $storage->getLogTableName('Non\Existent\ClassName');
+        $this->assertSame('class_name_log', $result);
+    }
+
+    #[Test]
+    public function getLogTableNameShouldHandleNonExistentClassWithPrefix(): void
+    {
+        $storage = new Yii2DatabaseStorage('_audit');
+
+        $result = $storage->getLogTableName('Non\Existent\UserProfile');
+        $this->assertSame('user_profile_audit', $result);
+    }
 }

@@ -118,6 +118,181 @@ final class AuditLoggerTest extends TestCase
         );
     }
 
+    // ============================================================
+    // Group A2: log() — error handling (Fix 1)
+    // ============================================================
+
+    #[Test]
+    public function logShouldCatchStorageExceptionWithIgnoreMode(): void
+    {
+        $storage = $this->createMock(AuditStorageInterface::class);
+        $contextProvider = $this->createMock(ContextProviderInterface::class);
+
+        $contextProvider
+            ->method('getInfo')
+            ->willReturn(new ContextInfo(
+                userId: null, userAgent: null, route: null,
+                module: null, ipAddress: null, userType: 'system',
+            ));
+
+        $storage
+            ->method('save')
+            ->willThrowException(new \RuntimeException('DB connection lost'));
+
+        $logger = new AuditLogger(
+            storage: $storage,
+            contextProvider: $contextProvider,
+            errorMode: AuditErrorMode::Ignore,
+        );
+
+        // Should not throw
+        $logger->log(
+            entityClass: 'App\Models\User',
+            entityId: 1,
+            operation: Operation::Insert,
+        );
+    }
+
+    #[Test]
+    public function logShouldCallErrorHandlerWithLogMode(): void
+    {
+        $storage = $this->createMock(AuditStorageInterface::class);
+        $contextProvider = $this->createMock(ContextProviderInterface::class);
+        $psrLogger = $this->createMock(\Psr\Log\LoggerInterface::class);
+
+        $contextProvider
+            ->method('getInfo')
+            ->willReturn(new ContextInfo(
+                userId: null, userAgent: null, route: null,
+                module: null, ipAddress: null, userType: 'system',
+            ));
+
+        $storage
+            ->method('save')
+            ->willThrowException(new \RuntimeException('DB error'));
+
+        $psrLogger
+            ->expects($this->once())
+            ->method('error')
+            ->with(
+                $this->stringContains('DB error'),
+                $this->callback(fn(array $ctx) => isset($ctx['exception'])),
+            );
+
+        $logger = new AuditLogger(
+            storage: $storage,
+            contextProvider: $contextProvider,
+            logger: $psrLogger,
+            errorMode: AuditErrorMode::Log,
+        );
+
+        $logger->log(
+            entityClass: 'App\Models\User',
+            entityId: 1,
+            operation: Operation::Insert,
+        );
+    }
+
+    #[Test]
+    public function logShouldFallbackToErrorLogWhenNoPsrLogger(): void
+    {
+        $storage = $this->createMock(AuditStorageInterface::class);
+        $contextProvider = $this->createMock(ContextProviderInterface::class);
+
+        $contextProvider
+            ->method('getInfo')
+            ->willReturn(new ContextInfo(
+                userId: null, userAgent: null, route: null,
+                module: null, ipAddress: null, userType: 'system',
+            ));
+
+        $storage
+            ->method('save')
+            ->willThrowException(new \RuntimeException('fallback test'));
+
+        $logger = new AuditLogger(
+            storage: $storage,
+            contextProvider: $contextProvider,
+            errorMode: AuditErrorMode::Log,
+        );
+
+        // Should not throw — uses error_log() fallback
+        $logger->log(
+            entityClass: 'App\Models\User',
+            entityId: 1,
+            operation: Operation::Insert,
+        );
+    }
+
+    #[Test]
+    public function logShouldThrowAuditLogExceptionWithThrowMode(): void
+    {
+        $storage = $this->createMock(AuditStorageInterface::class);
+        $contextProvider = $this->createMock(ContextProviderInterface::class);
+
+        $contextProvider
+            ->method('getInfo')
+            ->willReturn(new ContextInfo(
+                userId: null, userAgent: null, route: null,
+                module: null, ipAddress: null, userType: 'system',
+            ));
+
+        $storage
+            ->method('save')
+            ->willThrowException(new \RuntimeException('DB failure'));
+
+        $logger = new AuditLogger(
+            storage: $storage,
+            contextProvider: $contextProvider,
+            errorMode: AuditErrorMode::Throw,
+        );
+
+        $this->expectException(AuditLogException::class);
+        $this->expectExceptionMessage('DB failure');
+
+        $logger->log(
+            entityClass: 'App\Models\User',
+            entityId: 1,
+            operation: Operation::Insert,
+        );
+    }
+
+    // ============================================================
+    // Group A3: handleError() — non-numeric exception codes (Fix 1)
+    // ============================================================
+
+    #[Test]
+    public function handleErrorShouldHandleNonNumericExceptionCode(): void
+    {
+        $storage = $this->createMock(AuditStorageInterface::class);
+        $contextProvider = $this->createMock(ContextProviderInterface::class);
+
+        $contextProvider
+            ->method('getInfo')
+            ->willReturn(new ContextInfo(
+                userId: null, userAgent: null, route: null,
+                module: null, ipAddress: null, userType: 'system',
+            ));
+
+        $storage
+            ->method('save')
+            ->willThrowException(new \RuntimeException('Error', 0));
+
+        $logger = new AuditLogger(
+            storage: $storage,
+            contextProvider: $contextProvider,
+            errorMode: AuditErrorMode::Throw,
+        );
+
+        $this->expectException(AuditLogException::class);
+
+        $logger->log(
+            entityClass: 'App\Models\User',
+            entityId: 1,
+            operation: Operation::Insert,
+        );
+    }
+
     #[Test]
     public function logShouldDispatchBeforeLogEvent(): void
     {
