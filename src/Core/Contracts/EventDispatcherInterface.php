@@ -4,18 +4,13 @@ declare(strict_types=1);
 
 namespace FaustVik\AuditLog\Core\Contracts;
 
-/**
- * Event dispatcher interface
- */
-interface EventDispatcherInterface
-{
-    /**
-     * Dispatch event to listeners
-     *
-     * @param object $event Event object
-     */
-    public function dispatch(object $event): void;
+use Psr\EventDispatcher\EventDispatcherInterface as PsrEventDispatcherInterface;
 
+/**
+ * Event dispatcher interface (extends PSR-14)
+ */
+interface EventDispatcherInterface extends PsrEventDispatcherInterface
+{
     /**
      * Check if event has listeners
      *

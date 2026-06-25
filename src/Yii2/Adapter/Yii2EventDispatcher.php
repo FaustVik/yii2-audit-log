@@ -28,12 +28,14 @@ final class Yii2EventDispatcher implements EventDispatcherInterface
      *
      * @param object $event Event object
      */
-    public function dispatch(object $event): void
+    public function dispatch(object $event): object
     {
         $eventName = $event::class;
         $yiiEvent = new Yii2AuditEvent(payload: $event);
 
         $this->app->trigger($eventName, $yiiEvent);
+
+        return $event;
     }
 
     /**
