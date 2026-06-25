@@ -7,3 +7,4 @@ rector.php              export-ignore
 phpunit.xml             export-ignore
 .gitignore              export-ignore
 docs/                   export-ignore
+AGENTS.md               export-ignore
