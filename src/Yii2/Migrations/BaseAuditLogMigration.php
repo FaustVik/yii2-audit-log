@@ -19,6 +19,10 @@ abstract class BaseAuditLogMigration extends Migration
 
     protected function getLogTableName(string $tableName): string
     {
+        if (preg_match('/^\{\{%(.*?)}}$/', $tableName, $matches)) {
+            return '{{%' . $matches[1] . $this->getLogTableSuffix() . '}}';
+        }
+
         return $tableName . $this->getLogTableSuffix();
     }
 

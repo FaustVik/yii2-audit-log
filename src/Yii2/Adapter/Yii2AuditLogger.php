@@ -20,12 +20,16 @@ use Psr\Log\LoggerInterface;
  */
 final class Yii2AuditLogger implements AuditLoggerInterface
 {
+    private const DEFAULT_SYSTEM_EXCLUDE_ATTRIBUTES = ['created_at', 'updated_at', 'date_created', 'date_updated'];
+
+    private const DEFAULT_ALLOWED_USER_TYPES = ['admin', 'user', 'api', 'console', 'system'];
+
     private ?AuditLogger $logger = null;
 
     /**
      * @var array<int, string> System attributes to exclude
      */
-    public array $systemExcludeAttributes = ['created_at', 'updated_at', 'date_created', 'date_updated'];
+    public array $systemExcludeAttributes = self::DEFAULT_SYSTEM_EXCLUDE_ATTRIBUTES;
 
     /**
      * @var array<int, string> Entity classes to disable logging for
@@ -40,7 +44,7 @@ final class Yii2AuditLogger implements AuditLoggerInterface
     /**
      * @var array<int, string> Allowed user types
      */
-    public array $allowedUserTypes = ['admin', 'user', 'api', 'console', 'system'];
+    public array $allowedUserTypes = self::DEFAULT_ALLOWED_USER_TYPES;
 
     /**
      * @var bool Resolve Expression objects
@@ -81,10 +85,10 @@ final class Yii2AuditLogger implements AuditLoggerInterface
         public AuditStorageInterface $storage,
         public ContextProviderInterface $contextProvider,
         public ?EventDispatcherInterface $eventDispatcher = null,
-        array $systemExcludeAttributes = ['created_at', 'updated_at', 'date_created', 'date_updated'],
+        array $systemExcludeAttributes = self::DEFAULT_SYSTEM_EXCLUDE_ATTRIBUTES,
         array $disabledEntities = [],
         array $userTypeMapping = [],
-        array $allowedUserTypes = ['admin', 'user', 'api', 'console', 'system'],
+        array $allowedUserTypes = self::DEFAULT_ALLOWED_USER_TYPES,
         bool $resolveExpressions = true,
         ?LoggerInterface $psrLogger = null,
         AuditErrorMode $errorMode = AuditErrorMode::Ignore,

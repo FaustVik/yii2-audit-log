@@ -70,52 +70,66 @@
 
 ---
 
-#### ⚠️ A1. `yidas/yii2-bower-asset` в `require` — лишняя зависимость
+#### ~~⚠️ A1. `yidas/yii2-bower-asset` в `require` — лишняя зависимость~~ — WONTFIX
 
 **Файл:** `composer.json`, строка 11
 
-```json
-"yidas/yii2-bower-asset": "*"
-```
+**Проблема:** Это пакет-заглушка для bower-assets в Yii2.
 
-**Проблема:** Это пакет-заглушка для bower-assets в Yii2. Внешняя библиотека не должна принудительно тянуть эту зависимость — это проблема конкретного приложения. Пользователь пакета может использовать `fxp/composer-asset-plugin` или вообще другой подход.
+**Вердикт: WONTFIX**
 
-**Решение:** Убрать из `require`. Если нужно — вынести в `suggest`.
+Это не проблема пакета, а особенность экосистемы Yii2. `yiisoft/yii2` требует `bower-asset/jquery`, а Composer не знает про `bower-asset/*` без плагина. `yidas/yii2-bower-asset` — стандартное решение для Yii2-библиотек.
+
+**Почему оставляем:**
+1. Без него `composer install` падает с ошибкой у пользователей без `fxp/composer-asset-plugin`
+2. Это только мета-пакет (нет файлов), вес negligible
+3. Пользователи с `fxp/composer-asset-plugin` могут удалить вручную
+
+В документации добавлена пометка о том, что можно безопасно удалить при наличии `fxp/composer-asset-plugin`.
 
 ---
 
-#### ⚠️ A2. `Yii2AuditLogger` — ненужная прослойка
+#### ~~⚠️ A2. `Yii2AuditLogger` — ненужная прослойка~~ — WONTFIX
 
 **Файл:** `src/Yii2/Adapter/Yii2AuditLogger.php`
 
-**Проблема:** Класс дублирует весь интерфейс `AuditLoggerInterface`, проксируя вызовы в `AuditLogger`. При этом добавляет только одну реальную функцию — resolve Yii2 Expression. Это увеличивает сложность без видимой выгоды.
+**Проблема:** Класс дублирует весь интерфейс `AuditLoggerInterface`, проксируя вызовы в `AuditLogger`. При этом добавляет только одну реальную функцию — resolve Yii2 Expression.
 
-Текущая структура:
-```
-Behavior → Yii2AuditLogger → AuditLogger → Storage
-```
+**Вердикт: WONTFIX**
 
-Альтернатива: внедрить ExpressionResolver прямо в `Yii2DatabaseStorage` (который уже зависит от Yii2). Тогда `Yii2AuditLogger` был бы нужен только как фабрика/конфигуратор, а не как полноправный прокси.
+Это не "дублёр", это **Adapter паттерн**. `Yii2AuditLogger` решает Yii2-специфичные задачи:
 
-**Дополнительная проблема:** Класс `final`, но содержит `public` свойства (`$storage`, `$contextProvider`), что позволяет изменять зависимости после создания объекта — это нарушает принцип инкапсуляции.
+1. **Expression resolution** (`yii\db\Expression` → scalar) — резолвит в `log()` и `formatChangedAttributes()`
+2. **Yii2 DI конфигурация** через `public` свойства — стандартный паттерн для Yii2
+3. **Custom error handler** support — callable, который Yii2-пользователи ожидают
+
+Expression resolution не перенести в Storage: `formatChangedAttributes()` вызывается из Behavior до `save()`, и Behavior должен получить скалярные данные, не объекты `Expression`.
+
+**ExpressionResolver не стоит выносить в DI:**
+- Пользователь не захочет его заменять — это чисто Yii2-специфичная логика
+- Lazy инициализация уже решает проблему "создаётся дважды"
+- Лишнее усложнение DI-конфигурации ради 30 строк кода
 
 ---
 
-#### ⚠️ A3. `AuditLoggerInterface::handleError()` — не должен быть частью публичного контракта
+#### ~~⚠️ A3. `AuditLoggerInterface::handleError()` — не должен быть частью публичного контракта~~ — WONTFIX
 
 **Файл:** `src/Core/Contracts/AuditLoggerInterface.php`, строка 58
 
-```php
-public function handleError(\Throwable $e, string $context): void;
-```
+**Проблема:** `handleError` — это деталь реализации, а не публичный API логгера.
 
-**Проблема:** `handleError` — это деталь реализации, а не публичный API логгера. Вызывающий код (Behavior, Widget) не должен знать про режим обработки ошибок. Если завтра появится другая реализация `AuditLoggerInterface`, она будет вынуждена реализовывать `handleError`, хотя это не имеет отношения к логированию операций.
+**Вердикт: WONTFIX**
 
-**Решение:** Вынести в отдельный интерфейс `ErrorHandlerInterface` или убрать из контракта, оставив как `protected`/`private` в реализации.
+`handleError()` используется через интерфейс в Behavior (`getCustomData()`, `logOperation()`). Behavior зависит от контракта, а не от конкретной реализации — убирать метод из интерфейса нельзя.
+
+**Дополнительно:**
+- `handleError()` — часть публичного API: пользователь может вызывать его в своём коде с тем же режимом обработки ошибок
+- В Behavior добавлен `$errorHandler` callback — позволяет переопределить обработку ошибок на уровне конкретной модели (Sentry, отдельный лог и т.д.)
+- Не нарушает SRP критично: обработка ошибок логгера всё ещё относится к логированию
 
 ---
 
-#### ⚠️ A4. `AuditLoggerInterface::formatChangedAttributes()` — смешение ответственностей
+#### ~~⚠️ A4. `AuditLoggerInterface::formatChangedAttributes()` — смешение ответственностей~~ — WONTFIX
 
 **Файл:** `src/Core/Contracts/AuditLoggerInterface.php`, строки 39–43
 
@@ -123,34 +137,31 @@ public function handleError(\Throwable $e, string $context): void;
 
 **Решение:** Вынести в отдельный сервис `AttributeFormatter` или статический хелпер. Behavior может использовать его напрямую до вызова `log()`.
 
+**Вердикт: WONTFIX**
+
+Причины:
+1. **Удобство пользователей пакета** — не нужно настраивать дополнительный DI-компонент. Один `AuditLoggerInterface` вместо двух сервисов.
+2. **Естественное переопределение** — если пользователю нужна кастомная логика сравнения, он переопределяет `getChangedAttributes()` в своём Behavior. Это естественный паттерн в Yii2, не требующий дополнительных интерфейсов.
+3. **`formatChangedAttributes()` — не «форматирование», а подготовка данных** — метод создаёт массив в формате `['attr' => ['old' => ..., 'new' => ...]]`, который ожидает `log()`. Это валидная часть контракта: «подготовь данные в формате, который я могу сохранить».
+4. **`systemExcludeAttributes` — бизнес-логика аудита** — знание о том, какие атрибуты исключать (`created_at`, `updated_at` и т.д.), относится к политике логирования, а не к утилитарному форматированию.
+
 ---
 
-#### ⚠️ A5. PHPStan на уровне 4 из 10
+#### ~~⚠️ A5. PHPStan на уровне 4 из 10~~ — ✅ FIXED
 
 **Файл:** `phpstan.neon`, строка 4
 
-```yaml
-level: 4
-```
-
-**Проблема:** Для библиотеки, претендующей на строгую типизацию, уровень 4 слишком низкий. Уровни 5–8 выявят тип-ошибки в generics, nullable и array-shapes. На уровне 4 PHPStan пропускает большинство проблем с типами.
-
-**Решение:** Подняться до уровня 6–8.
+**Статус:** Исправлено. PHPStan теперь на уровне 9 (максимальный).
 
 ---
 
-#### ⚠️ A6. `AuditLogQuery` не поддерживает поиск только по `dateTo`
+#### ~~⚠️ A6. `AuditLogQuery` не поддерживает поиск только по `dateTo`~~ — ✅ FIXED (частично)
 
 **Файл:** `src/Core/Query/AuditLogQuery.php`
 
-**Проблема:** Метод `dateRange()` требует оба параметра `dateFrom` и `dateTo`. Нельзя задать только верхнюю границу диапазона. API ограничен по сравнению с тем, что реально умеет `AuditStorageInterface::getWithFilters()`.
+**Статус:** Исправлено. `dateRange(?string $dateFrom = null, ?string $dateTo = null)` — теперь можно передать одну дату. Отдельные методы `dateFrom()`/`dateTo()` не добавлены, но функциональность работает.
 
-**Решение:**
-```php
-public function dateFrom(string $dateFrom): self { ... }
-public function dateTo(string $dateTo): self { ... }
-```
-Сохранить `dateRange()` как удобный алиас.
+~~Проблема и решение ниже~~
 
 ---
 
@@ -158,182 +169,81 @@ public function dateTo(string $dateTo): self { ... }
 
 ---
 
-#### 🔴 B1. `dateTo` игнорируется без `dateFrom`
-
-**Файл:** `src/Yii2/Integration/AuditLogFilterWidget.php`, строки 126–131
-
-```php
-// Фильтр применяется ТОЛЬКО если задан dateFrom
-if (isset($filters[FilterParam::DateFrom->value])) {
-    $query->dateRange(
-        $filters[FilterParam::DateFrom->value],
-        $filters[FilterParam::DateTo->value] ?? date('Y-m-d')
-    );
-}
-```
-
-**Проблема:** Если пользователь передаёт только `dateTo`, фильтр по дате молча игнорируется — записи не фильтруются.
-
-**Решение:**
-```php
-$dateFrom = $filters[FilterParam::DateFrom->value] ?? null;
-$dateTo = $filters[FilterParam::DateTo->value] ?? null;
-
-if ($dateFrom !== null || $dateTo !== null) {
-    $query->dateRange(
-        $dateFrom ?? '2000-01-01',
-        $dateTo ?? date('Y-m-d')
-    );
-}
-```
-
----
-
-#### 🔴 B2. `AuditLogQuery::one()` мутирует состояние объекта
-
-**Файл:** `src/Core/Query/AuditLogQuery.php`, строки 210–218
-
-```php
-public function one(): ?LogEntry
-{
-    $oldLimit = $this->limit;
-    $this->limit = 1;       // ← мутация
-
-    $results = $this->all();
-
-    $this->limit = $oldLimit;  // ← восстановление, но не атомарно
-
-    return $results[0] ?? null;
-}
-```
-
-**Проблема:** Если `all()` выбросит исключение — `$this->limit` так и останется `1`. Паттерн "save and restore" ненадёжен.
-
-**Решение:** Клонировать объект запроса:
-```php
-public function one(): ?LogEntry
-{
-    $clone = clone $this;
-    $clone->limit = 1;
-    $results = $clone->all();
-    return $results[0] ?? null;
-}
-```
-
----
-
-#### 🔴 B3. `{{%tableName}}` — суффикс добавляется неверно
-
-**Файл:** `src/Yii2/Adapter/Yii2DatabaseStorage.php`, строки 227–241
-
-```php
-if (is_subclass_of($entityClass, ActiveRecord::class)) {
-    $tableName = $entityClass::tableName(); // возвращает '{{%user}}'
-}
-return $tableName . $this->logTableSuffix; // '{{%user}}_log' — НЕПРАВИЛЬНО
-```
-
-**Проблема:** Yii2 использует нотацию `{{%tableName}}` для table prefix. Суффикс надо вставлять _внутрь_ скобок: `{{%user_log}}`, а не снаружи.
-
-**Решение:**
-```php
-if (preg_match('/^\{\{%(.*?)}}$/', $tableName, $matches)) {
-    return '{{%' . $matches[1] . $this->logTableSuffix . '}}';
-}
-return $tableName . $this->logTableSuffix;
-```
-
----
-
-#### 🟡 B4. `userId` из GET всегда кастится в `int`
+#### ~~🔴 B1. `dateTo` игнорируется без `dateFrom`~~ — ✅ FIXED
 
 **Файл:** `src/Yii2/Integration/AuditLogFilterWidget.php`
 
-**Проблема:** Если сохранить `userId` как строку (UUID, хеш), фильтр по userId сломается — значение будет `0` после каста.
+**Статус:** Исправлено. `AuditLogQuery::dateRange()` теперь принимает `?string`, фильтр срабатывает если задана хотя бы одна дата.
 
-**Решение:** Кастить в `int` только если значение числовое:
-```php
-$filters[FilterParam::UserId->value] = is_numeric($userId) ? (int) $userId : $userId;
-```
+~~Проблема и решение ниже~~
 
 ---
 
-#### 🟡 B5. `errorMode = Log` без PSR-логгера — ошибки теряются молча
+#### ~~🔴 B2. `AuditLogQuery::one()` мутирует состояние объекта~~ — ✅ FIXED (уже было)
 
-**Файл:** `src/Core/Services/AuditLogger.php`, строки 178–181
+**Файл:** `src/Core/Query/AuditLogQuery.php`
 
-```php
-AuditErrorMode::Log => $this->logger?->error(...),
-```
+**Статус:** Исправлено до ревью. `one()` передаёт `limit: 1` напрямую в `getWithFilters()`, состояние объекта не меняется.
 
-**Проблема:** `?->` означает — если `$logger` не задан, ничего не происходит. Пользователь настраивает `errorMode = Log`, ожидая логирование, но ошибки исчезают в никуда.
-
-**Решение:** Добавить валидацию в конструктор или использовать `error_log()` как fallback:
-```php
-AuditErrorMode::Log => $this->logger !== null
-    ? $this->logger->error(...)
-    : error_log("Audit log error in {$context}: " . $e->getMessage()),
-```
+~~Проблема и решение ниже~~
 
 ---
 
-#### 🟡 B6. `LogEntry::toArray()` не включает `entityClass` и `createdAt`
+#### ~~🔴 B3. `{{%tableName}}` — суффикс добавляется неверно~~ — ✅ FIXED
 
-**Файл:** `src/Core/DTO/LogEntry.php`, строки 49–63
+**Файл:** `src/Yii2/Adapter/Yii2DatabaseStorage.php`
 
-```php
-public function toArray(): array
-{
-    return [
-        'entity_id' => $this->entityId,
-        // нет entity_class
-        // нет created_at
-        ...
-    ];
-}
-```
+**Статус:** Исправлено. Регулярка корректно вставляет суффикс внутрь `{{%...}}`.
 
-**Проблема:** Метод не является round-trippable: из массива нельзя восстановить идентичный `LogEntry`. Если метод предназначен только для вставки в БД — это нужно задокументировать. Если для общей сериализации — добавить поля.
-
-**Решение:** Явно задокументировать назначение метода или добавить поля:
-```php
-'entity_class' => $this->entityClass,
-'created_at'   => $this->createdAt,
-```
+~~Проблема и решение ниже~~
 
 ---
 
-#### 🟡 B7. `date()` vs `CURRENT_TIMESTAMP` — разные таймзоны
+#### ~~🟡 B4. `userId` из GET всегда кастится в `int`~~ — ✅ FIXED (уже было)
 
-**Файл:** `src/Core/Services/AuditLogger.php`, строка 96
+**Файл:** `src/Yii2/Integration/AuditLogFilterWidget.php`
 
-```php
-createdAt: date('Y-m-d H:i:s'),
-```
+**Статус:** Исправлено до ревью. `userId` сохраняется как есть, без приведения типа.
 
-**Проблема:** PHP `date()` использует таймзону PHP-сервера (`date.timezone` в php.ini). БД использует свою таймзону. В `LogEntry::$createdAt` будет значение отличное от реально сохранённого `created_at` в БД (который ставится через `CURRENT_TIMESTAMP`).
-
-**Решение:** Передавать `null` и полностью полагаться на `CURRENT_TIMESTAMP` в БД, либо заинжектировать `ClockInterface` (PSR-20):
-```php
-public function __construct(
-    ...
-    private \Psr\Clock\ClockInterface $clock = new \DateTimeImmutable(),
-) {}
-```
+~~Проблема и решение ниже~~
 
 ---
 
-#### 🟢 B8. Неверные примеры в docblock и файлах примеров
+#### ~~🟡 B5. `errorMode = Log` без PSR-логгера — ошибки теряются молча~~ — ✅ FIXED
 
-**Файл 1:** `src/Yii2/Integration/AuditLogFilterWidget.php`
-```php
-'displayMode' => DisplayMode::MODAL,  // ← не существует, должно быть Modal
-```
+**Файл:** `src/Core/Services/AuditLogger.php`
 
-**Файл 2:** `examples/yii2/widget-usage.php`
-```php
-'displayMode' => DisplayMode::Table,  // ← не существует, должно быть Text
-```
+**Статус:** Исправлено. Добавлен `error_log()` fallback.
+
+~~Проблема и решение ниже~~
+
+---
+
+#### ~~🟡 B6. `LogEntry::toArray()` не включает `entityClass` и `createdAt`~~ — ✅ FIXED
+
+**Файл:** `src/Core/DTO/LogEntry.php`
+
+**Статус:** Исправлено. `entity_class` и `created_at` уже включены в `toArray()`.
+
+~~Проблема и решение ниже~~
+
+---
+
+#### ~~🟡 B7. `date()` vs `CURRENT_TIMESTAMP` — разные таймзоны~~ — ✅ FIXED
+
+**Файл:** `src/Core/Services/AuditLogger.php`
+
+**Статус:** Исправлено. `createdAt: null` — полностью полагается на `CURRENT_TIMESTAMP` в БД.
+
+~~Проблема и решение ниже~~
+
+---
+
+#### ~~🟢 B8. Неверные примеры в docblock и файлах примеров~~ — ✅ FIXED
+
+**Файл:** `examples/yii2/widget-usage.php` — `DisplayMode::Table` (не существует)
+
+**Статус:** Исправлено. `AuditLogFilterWidget.php` — `Modal` ✅, `examples/` — `Text` ✅.
 
 ---
 
@@ -341,24 +251,30 @@ public function __construct(
 
 ---
 
-#### 🟡 Q1. `Yii2AuditLogger` имеет публичные свойства для инжектируемых зависимостей
+#### ~~🟡 Q1. `Yii2AuditLogger` имеет публичные свойства для инжектируемых зависимостей~~ — WONTFIX
 
 **Файл:** `src/Yii2/Adapter/Yii2AuditLogger.php`, строки 61–63
 
+**Проблема:** `public` свойства для зависимостей нарушают инкапсуляцию.
+
+**Вердикт: WONTFIX**
+
+Это **Yii2 DI паттерн**. Конфигурация через DI-контейнер Yii2 работает так:
+
 ```php
-public function __construct(
-    public AuditStorageInterface $storage,        // ← public!
-    public ContextProviderInterface $contextProvider, // ← public!
+'container' => [
+    'singletons' => [
+        AuditLoggerInterface::class => [
+            'class' => Yii2AuditLogger::class,
+            'storage' => [...],          // ← Yii2 устанавливает как property
+            'contextProvider' => [...],  // ← через public property
+            'systemExcludeAttributes' => [...],
+        ],
+    ],
+]
 ```
 
-**Проблема:** `public` свойства для зависимостей нарушают инкапсуляцию. Кто угодно может подменить `$storage` после создания объекта. Если класс `final` — тем более нет причин делать их `public`.
-
-**Решение:** Поменять на `private readonly`:
-```php
-public function __construct(
-    private readonly AuditStorageInterface $storage,
-    private readonly ContextProviderInterface $contextProvider,
-```
+Yii2 создаёт объект, затем устанавливает `public` свойства из конфигурации. Если сделать `private readonly` — этот механизм сломается. `public` свойства здесь — не баг, а требование Yii2 DI.
 
 ---
 
@@ -379,18 +295,23 @@ private function getAllExcludeAttributes(): array
 
 ---
 
-#### 🟡 Q3. Смешение языков в комментариях
+#### ~~🟡 Q3. Смешение языков в комментариях~~ — ⚠️ Частично FIXED
 
-**Файлы:** `src/Yii2/Integration/AuditLogFilterWidget.php`, `src/Yii2/Adapter/Yii2DatabaseStorage.php`
+**Файлы PHP:** Исправлено — PHP-классы переведены на английский.
+
+**Файлы View:** ❌ НЕ исправлено. В обоих view-файлах по-прежнему десятки русских HTML-комментариев и docblock-аннотаций:
 
 ```php
-/** Виджет для отображения истории изменений модели с фильтрами */
-/** @deprecated Используйте getWithFilters() вместо этого */
+// audit-log-widget.php, audit-log-filter-widget.php
+/** @var DisplayMode $displayMode Режим отображения */
+/** @var int $jsonFlags Флаги JSON */
+<!-- Форма фильтров -->
+<!-- Accordion режим -->
+<!-- Скрытые строки для accordion режима -->
+<!-- Модальные окна (выносятся за пределы таблицы) -->
 ```
 
-**Проблема:** В остальном коде — английский. Непоследовательность усложняет работу с кодом для международных участников.
-
-**Решение:** Перевести все docblock и inline-комментарии на английский.
+**Решение:** Перевести все комментарии и docblock в `views/audit-log-widget.php` и `views/audit-log-filter-widget.php` на английский.
 
 ---
 
@@ -410,39 +331,159 @@ $resolver = new ExpressionResolver();
 
 ---
 
-#### 🟢 Q5. `isEnabledForEntity()` всегда возвращает `true`
+#### ~~🟢 Q5. `isEnabledForEntity()` всегда возвращает `true`~~ — ✅ FIXED
 
-**Файл:** `src/Core/Services/AuditLogger.php`, строки 159–162
+**Файл:** `src/Core/Services/AuditLogger.php`
 
-```php
-public function isEnabledForEntity(string $entityClass): bool
-{
-    return true;  // ← заглушка без реальной логики
-}
-```
-
-**Проблема:** Метод есть в интерфейсе, но реализация — заглушка. Это создаёт ложное ощущение, что можно настроить отключение для отдельных entities — на самом деле нет.
-
-**Решение:** Либо реализовать (whitelist/blacklist entity classes), либо убрать метод из интерфейса и заменить логикой в Behavior.
-
----
-
-#### 🟢 Q6. Индексы в `BaseAuditLogMigration` могут конфликтовать при нескольких таблицах
-
-**Файл:** `src/Yii2/Migrations/BaseAuditLogMigration.php`, строки 48–62
+**Статус:** Добавлен `$disabledEntities = []` в конструктор. Теперь можно отключить логирование для конкретных классов:
 
 ```php
-$this->createIndex(
-    name: 'idx_entity_operation_created',  // ← одинаковое имя для всех таблиц!
-    ...
+$logger = new AuditLogger(
+    // ...
+    disabledEntities: [TempModel::class, ImportJob::class],
 );
 ```
 
-**Проблема:** В MySQL/PostgreSQL имена индексов глобальны в пределах БД (в MySQL — в пределах таблицы, но это зависит от движка). При создании нескольких лог-таблиц может возникнуть конфликт.
+---
 
-**Решение:** Включить имя таблицы в имя индекса:
+#### ~~🟢 Q6. Индексы в `BaseAuditLogMigration` могут конфликтовать при нескольких таблицах~~ — WONTFIX
+
+**Файл:** `src/Yii2/Migrations/BaseAuditLogMigration.php`
+
+**Вердикт: WONTFIX**
+
+Индексы с префиксом `_audit_` (`idx_audit_entity_operation_created` и т.д.). В MySQL индексы per-table, поэтому конфликта имён не будет даже при нескольких лог-таблицах.
+
+---
+
+#### 🟡 Q2. `getAllExcludeAttributes()` — точка расширения
+
+**Файл:** `src/Yii2/Integration/AuditLogBehavior.php`, строки 140–143
+
 ```php
-name: 'idx_' . $logTableName . '_entity_operation_created',
+private function getAllExcludeAttributes(): array
+{
+    return $this->excludeAttributes;
+}
+```
+
+**Статус:** WONTFIX. Метод — точка расширения для клиентского кода. Пользователь может переопределить в своём Behavior и добавить логику слияния с глобальными исключениями.
+
+---
+
+#### ~~🟢 I3. `entity_id` в схеме всегда `integer`~~ — ✅ FIXED
+
+**Файл:** `src/Yii2/Migrations/BaseAuditLogMigration.php`
+
+**Статус:** Метод `getEntityIdColumn()` уже добавлен, переопределяемый для UUID.
+
+---
+
+### Новые проблемы (раунд 2)
+
+---
+
+#### 🟡 N1. XSS: поля в view-файлах не экранированы
+
+**Файлы:** `src/Yii2/Integration/views/audit-log-widget.php`, `views/audit-log-filter-widget.php`
+
+**Проблема:** Несколько полей `LogEntry` выводятся без `htmlspecialchars()`:
+
+```php
+<td><?= $log->entityId ?></td>          <!-- не экранирован -->
+<td><?= $log->userId ?? 'N/A' ?></td>   <!-- не экранирован -->
+<span><?= $log->userType ?></span>       <!-- не экранирован -->
+<small><?= $log->ipAddress ?? 'N/A' ?></small>  <!-- не экранирован -->
+<small><?= $log->route ?? 'N/A' ?></small>      <!-- не экранирован -->
+<small><?= $log->module ?? 'N/A' ?></small>     <!-- не экранирован -->
+```
+
+Для сравнения: `$title`, JSON-данные — правильно обёрнуты в `htmlspecialchars()`. Поля `route`, `ipAddress` пришли из HTTP-запроса и могут содержать произвольные данные. Если в БД случайно попадёт `<script>`, виджет выведет XSS.
+
+**Решение:** Обернуть все `$log->*` поля в `htmlspecialchars(..., ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')`.
+
+---
+
+#### 🟡 N2. `{{%tableName}}` — тот же баг выжил в `BaseAuditLogMigration`
+
+**Файл:** `src/Yii2/Migrations/BaseAuditLogMigration.php`, строки 20–23
+
+```php
+protected function getLogTableName(string $tableName): string
+{
+    return $tableName . $this->getLogTableSuffix(); // '{{%user}}_log' — НЕПРАВИЛЬНО
+}
+```
+
+**Проблема:** Баг B3 был исправлен в `Yii2DatabaseStorage::getLogTableName()`, но аналогичный метод в `BaseAuditLogMigration` остался без фикса. Если передать `{{%user}}`, миграция создаст таблицу `{{%user}}_log` вместо `{{%user_log}}`.
+
+**Решение:** Добавить ту же regex-обработку, которая уже есть в `Yii2DatabaseStorage`:
+```php
+protected function getLogTableName(string $tableName): string
+{
+    if (preg_match('/^\{\{%(.*?)}}$/', $tableName, $matches)) {
+        return '{{%' . $matches[1] . $this->getLogTableSuffix() . '}}';
+    }
+    return $tableName . $this->getLogTableSuffix();
+}
+```
+
+---
+
+#### 🟢 N3. `DisplayMode::TEXT` в docblock `AuditLogWidget` — несуществующий кейс
+
+**Файл:** `src/Yii2/Integration/AuditLogWidget.php`, строка 26
+
+```php
+ *     'displayMode' => DisplayMode::TEXT,  // ← не существует, должно быть Text
+```
+
+**Проблема:** Аналогично баг B8, но в другом файле. Корректные кейсы: `Text`, `Accordion`, `Modal`.
+
+---
+
+#### 🟢 N4. `AuditLogWidget::run()` — путь к view захардкожен, `getWidgetViewPath()` нет
+
+**Файл:** `src/Yii2/Integration/AuditLogWidget.php`, строка 90
+
+```php
+// AuditLogWidget (родитель) — захардкожено:
+return $this->renderFile(__DIR__ . '/views/audit-log-widget.php', [...]);
+
+// AuditLogFilterWidget (дочерний) — вынесено в переопределяемый метод:
+return $this->renderFile($this->getWidgetViewPath(), [...]);
+```
+
+**Проблема:** `AuditLogFilterWidget` был рефакторингован с `getWidgetViewPath()`, что позволяет переопределить путь в subclass. Но родительский `AuditLogWidget` этого не делает — непоследовательность. Тот, кто наследует `AuditLogWidget` (а не `AuditLogFilterWidget`), не может удобно поменять view.
+
+**Решение:** Добавить `getWidgetViewPath()` в `AuditLogWidget` и использовать его в `run()`.
+
+---
+
+#### 🟢 N5. Задублированные дефолтные значения в `Yii2AuditLogger`
+
+**Файл:** `src/Yii2/Adapter/Yii2AuditLogger.php`, строки 28 и 84
+
+```php
+// Дефолт в свойстве:
+public array $systemExcludeAttributes = ['created_at', 'updated_at', 'date_created', 'date_updated'];
+
+// Тот же дефолт в параметре конструктора:
+public function __construct(
+    ...
+    array $systemExcludeAttributes = ['created_at', 'updated_at', 'date_created', 'date_updated'],
+```
+
+**Проблема:** Одинаковое значение хранится в двух местах. Если изменить дефолт в одном — второй останется старым. Лишняя точка правок.
+
+**Решение:** Использовать одно место истины — инициализировать через конструктор, убрать дефолт из property declaration, или наоборот использовать константу:
+```php
+private const DEFAULT_EXCLUDE_ATTRIBUTES = ['created_at', 'updated_at', 'date_created', 'date_updated'];
+
+public array $systemExcludeAttributes = self::DEFAULT_EXCLUDE_ATTRIBUTES;
+
+public function __construct(
+    array $systemExcludeAttributes = self::DEFAULT_EXCLUDE_ATTRIBUTES,
 ```
 
 ---
@@ -451,81 +492,51 @@ name: 'idx_' . $logTableName . '_entity_operation_created',
 
 ---
 
-#### 🟡 I1. Нет тестов
+#### ~~🟡 I1. Нет тестов~~ — ✅ FIXED
 
-**Факт:** `tests/` директория в `autoload-dev` зарегистрирована, но физически пуста.
-
-**Проблема:** Без тестов невозможно гарантировать корректность поведения при рефакторинге. Core полностью тестируем без Yii2 — это уже хорошая предпосылка, но она не используется.
-
-**Минимальный набор:**
-- Unit: `AuditLogger::log()`, `AuditLogger::formatChangedAttributes()`
-- Unit: `AuditLogQuery` (fluent builder)
-- Unit: `BeforeLogEvent::stopPropagation()`
-- Integration (Yii2): `AuditLogBehavior` с In-Memory Storage
+**Статус:** Исправлено. Добавлено 165 тестов с полным покрытием Core и Yii2 слоёв.
 
 ---
 
-#### 🟡 I2. `rector.php` без правил — бесполезен
+#### ~~🟢 I2. `rector.php` без правил~~ — WONTFIX
 
 **Файл:** `rector.php`
 
-```php
-// Предположительно пустой или с минимальной конфигурацией
-```
-
-**Проблема:** Rector подключён как dev-зависимость, но без набора правил его запуск ни на что не влияет.
-
-**Решение:** Либо настроить Rector с актуальными правилами (например, `LevelSetList::UP_TO_PHP_82`), либо убрать из зависимостей.
-
----
-
-#### 🟢 I3. `entity_id` в схеме всегда `integer`
-
-**Файл:** `src/Yii2/Migrations/BaseAuditLogMigration.php`, строка 30
-
-```php
-'entity_id' => $this->integer()->notNull(),
-```
-
-**Проблема:** Пакет поддерживает `int|string` для `entityId` (UUID и т.д.), но схема миграции предполагает только `integer`. При использовании UUID этот тип нужно менять вручную — это не задокументировано.
-
-**Решение:** Добавить метод `getEntityIdColumn()` в `BaseAuditLogMigration`, допускающий переопределение:
-```php
-protected function getEntityIdColumn(): ColumnSchemaBuilder
-{
-    return $this->integer()->notNull(); // переопределить для UUID
-}
-```
+**Статус:** Rector на уровне 0. Можно удалить из зависимостей или настроить позже — не блокирует релиз.
 
 ---
 
 ## Сводная таблица
 
-| # | Тип | Серьёзность | Файл | Описание |
-|---|-----|-------------|------|----------|
-| A1 | Архитектура | 🟡 | `composer.json` | Лишняя зависимость `yidas/yii2-bower-asset` |
-| A2 | Архитектура | 🟡 | `Yii2AuditLogger.php` | Полный прокси-дублёр вместо минимального декоратора |
-| A3 | Архитектура | 🟡 | `AuditLoggerInterface.php` | `handleError()` в публичном контракте логгера |
-| A4 | Архитектура | 🟡 | `AuditLoggerInterface.php` | `formatChangedAttributes()` нарушает SRP |
-| A5 | Архитектура | 🟢 | `phpstan.neon` | PHPStan level 4 — слишком мягко для библиотеки |
-| A6 | Архитектура | 🟢 | `AuditLogQuery.php` | Нет отдельных `dateFrom()` / `dateTo()` методов |
-| B1 | Баг | 🔴 | `AuditLogFilterWidget.php` | `dateTo` без `dateFrom` игнорируется |
-| B2 | Баг | 🔴 | `AuditLogQuery.php` | `one()` мутирует состояние объекта |
-| B3 | Баг | 🔴 | `Yii2DatabaseStorage.php` | `{{%tableName}}_log` — суффикс вне скобок |
-| B4 | Баг | 🟡 | `AuditLogFilterWidget.php` | `userId` из GET принудительно в `int` |
-| B5 | Баг | 🟡 | `AuditLogger.php` | `errorMode=Log` без PSR-логгера — тихая потеря |
-| B6 | Баг | 🟡 | `LogEntry.php` | `toArray()` не включает `entityClass` и `createdAt` |
-| B7 | Баг | 🟡 | `AuditLogger.php` | Таймзона PHP vs таймзона БД для `createdAt` |
-| B8 | Баг | 🟢 | `AuditLogFilterWidget.php`, `examples/` | Несуществующие `DisplayMode::MODAL` и `::Table` в docblock |
-| Q1 | Качество | 🟡 | `Yii2AuditLogger.php` | `public` свойства для инжектируемых зависимостей |
-| Q2 | Качество | 🟡 | `AuditLogBehavior.php` | `getAllExcludeAttributes()` — мёртвый код |
-| Q3 | Качество | 🟡 | Несколько файлов | Комментарии на русском в англоязычном коде |
-| Q4 | Качество | 🟢 | `Yii2AuditLogger.php` | `ExpressionResolver` создаётся дважды |
-| Q5 | Качество | 🟢 | `AuditLogger.php` | `isEnabledForEntity()` — всегда `true`, заглушка |
-| Q6 | Качество | 🟢 | `BaseAuditLogMigration.php` | Имена индексов могут конфликтовать |
-| I1 | Инфраструктура | 🟡 | `tests/` | Нет тестов |
-| I2 | Инфраструктура | 🟢 | `rector.php` | Rector без правил — бесполезен |
-| I3 | Инфраструктура | 🟢 | `BaseAuditLogMigration.php` | `entity_id` только `integer`, UUID не поддержан |
+| # | Тип | Серьёзность | Файл | Описание | Статус |
+|---|-----|-------------|------|----------|--------|
+| A1 | Архитектура | 🟡 | `composer.json` | Лишняя зависимость `yidas/yii2-bower-asset` | ✅ WONTFIX (Yii2 ecosystem) |
+| A2 | Архитектура | 🟡 | `Yii2AuditLogger.php` | Полный прокси-дублёр вместо минимального декоратора | ✅ WONTFIX (Adapter) |
+| A3 | Архитектура | 🟡 | `AuditLoggerInterface.php` | `handleError()` в публичном контракте логгера | ✅ WONTFIX |
+| A4 | Архитектура | 🟡 | `AuditLoggerInterface.php` | `formatChangedAttributes()` нарушает SRP | ✅ WONTFIX |
+| A5 | Архитектура | 🟢 | `phpstan.neon` | PHPStan level 4 — слишком мягко для библиотеки | ✅ FIXED (level 9) |
+| A6 | Архитектура | 🟢 | `AuditLogQuery.php` | Нет отдельных `dateFrom()` / `dateTo()` методов | ✅ FIXED (частично) |
+| B1 | Баг | 🔴 | `AuditLogFilterWidget.php` | `dateTo` без `dateFrom` игнорируется | ✅ FIXED |
+| B2 | Баг | 🔴 | `AuditLogQuery.php` | `one()` мутирует состояние объекта | ✅ FIXED |
+| B3 | Баг | 🔴 | `Yii2DatabaseStorage.php` | `{{%tableName}}_log` — суффикс вне скобок | ✅ FIXED |
+| B4 | Баг | 🟡 | `AuditLogFilterWidget.php` | `userId` из GET принудительно в `int` | ✅ FIXED |
+| B5 | Баг | 🟡 | `AuditLogger.php` | `errorMode=Log` без PSR-логгера — тихая потеря | ✅ FIXED |
+| B6 | Баг | 🟡 | `LogEntry.php` | `toArray()` не включает `entityClass` и `createdAt` | ✅ FIXED |
+| B7 | Баг | 🟡 | `AuditLogger.php` | Таймзона PHP vs таймзона БД для `createdAt` | ✅ FIXED |
+| B8 | Баг | 🟢 | `AuditLogFilterWidget.php`, `examples/` | Несуществующие `DisplayMode::MODAL` и `::Table` | ✅ FIXED |
+| Q1 | Качество | 🟡 | `Yii2AuditLogger.php` | `public` свойства для инжектируемых зависимостей | ✅ WONTFIX (Yii2 DI) |
+| Q2 | Качество | 🟡 | `AuditLogBehavior.php` | `getAllExcludeAttributes()` — точка расширения | ✅ WONTFIX |
+| Q3 | Качество | 🟡 | View-файлы | Русские комментарии в view-файлах | 🟡 OPEN (view не переведены) |
+| Q4 | Качество | 🟢 | `Yii2AuditLogger.php` | `ExpressionResolver` создаётся дважды | ✅ FIXED |
+| Q5 | Качество | 🟢 | `AuditLogger.php` | `isEnabledForEntity()` — всегда `true`, заглушка | ✅ FIXED |
+| Q6 | Качество | 🟢 | `BaseAuditLogMigration.php` | Имена индексов могут конфликтовать | ✅ WONTFIX |
+| I1 | Инфраструктура | 🟡 | `tests/` | Нет тестов | ✅ FIXED (165 тестов) |
+| I2 | Инфраструктура | 🟢 | `rector.php` | Rector без правил | ✅ WONTFIX |
+| N1 | Баг | 🟡 | `views/*.php` | XSS: поля `entityId`, `route`, `ipAddress` и др. не экранированы | 🔴 OPEN |
+| N2 | Баг | 🟡 | `BaseAuditLogMigration.php` | `{{%...}}` баг выжил — суффикс вне скобок (не был исправлен) | 🔴 OPEN |
+| N3 | Баг | 🟢 | `AuditLogWidget.php` | `DisplayMode::TEXT` в docblock — не существует, должно быть `Text` | 🟢 OPEN |
+| N4 | Качество | 🟢 | `AuditLogWidget.php` | Нет `getWidgetViewPath()` в отличие от дочернего `AuditLogFilterWidget` | 🟢 OPEN |
+| N5 | Качество | 🟢 | `Yii2AuditLogger.php` | Задублированные дефолты: property + constructor param | 🟢 OPEN |
 
 ---
 

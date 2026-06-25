@@ -14,7 +14,6 @@ use FaustVik\AuditLog\Core\Enums\Operation;
 use FaustVik\AuditLog\Core\Events\AfterLogEvent;
 use FaustVik\AuditLog\Core\Events\BeforeLogEvent;
 use FaustVik\AuditLog\Core\Exceptions\AuditLogException;
-use FaustVik\AuditLog\Core\Exceptions\JsonEncodingException;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -50,7 +49,6 @@ class AuditLogger implements AuditLoggerInterface
     /**
      * @param array<string, array<string, mixed>> $changedAttributes
      * @param array<string, mixed> $customData
-     * @throws JsonEncodingException
      */
     public function log(
         string $entityClass,
