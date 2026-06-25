@@ -122,7 +122,7 @@ final class Yii2ContextProvider implements ContextProviderInterface
         $route = $this->getRoute();
         if ($route && !empty($this->userTypeMapping)) {
             foreach ($this->userTypeMapping as $pattern => $userType) {
-                if (fnmatch($pattern, $route)) {
+                if (fnmatch($pattern, $route) && in_array($userType, $this->allowedUserTypes, true)) {
                     return $userType;
                 }
             }

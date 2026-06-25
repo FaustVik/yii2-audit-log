@@ -89,7 +89,7 @@ final class Yii2DatabaseStorage implements AuditStorageInterface
 
         $query = (new Query())
             ->from($logTableName)
-            ->orderBy($orderBy);
+            ->orderBy($this->sanitizeOrderBy($orderBy));
 
         if ($entityId !== null) {
             $query->where(['entity_id' => $entityId]);
@@ -244,9 +244,12 @@ final class Yii2DatabaseStorage implements AuditStorageInterface
      */
     public function getLogTableName(string $entityClass): string
     {
-        // Get short class name without namespace
-        // @phpstan-ignore argument.type (entity class is always valid class name)
-        $shortName = (new \ReflectionClass($entityClass))->getShortName();
+        try {
+            // @phpstan-ignore argument.type (entity class may not be a valid class)
+            $shortName = (new \ReflectionClass($entityClass))->getShortName();
+        } catch (\ReflectionException) {
+            $shortName = basename(str_replace('\\', '/', $entityClass));
+        }
 
         // For ActiveRecord, use table name from model
         if (is_subclass_of($entityClass, ActiveRecord::class)) {
@@ -262,6 +265,29 @@ final class Yii2DatabaseStorage implements AuditStorageInterface
         }
 
         return $tableName . $this->logTableSuffix;
+    }
+
+    /**
+     * Sanitize orderBy parameter to prevent SQL injection
+     *
+     * Only allows: column_name ASC|DESC
+     */
+    private function sanitizeOrderBy(string $orderBy): string
+    {
+        $allowed = [
+            'id', 'entity_id', 'operation', 'created_at',
+            'user_id', 'user_type', 'route', 'module',
+        ];
+
+        $parts = preg_split('/\s+/', trim($orderBy));
+        $column = $parts[0] ?? '';
+        $direction = strtoupper($parts[1] ?? 'ASC');
+
+        if (!in_array($column, $allowed, true) || !in_array($direction, ['ASC', 'DESC'], true)) {
+            return 'created_at DESC';
+        }
+
+        return $column . ' ' . $direction;
     }
 
     /**

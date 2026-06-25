@@ -169,6 +169,12 @@ final class Yii2AuditLogger implements AuditLoggerInterface
             $changedAttributes = $this->resolveExpressionsInChanges($changedAttributes);
         }
 
+        // Resolve Expression in customData
+        if ($this->resolveExpressions && !empty($customData)) {
+            $resolver = $this->getResolver();
+            $customData = array_map([$resolver, 'resolve'], $customData);
+        }
+
         $this->getLogger()->log(
             entityClass: $entityClass,
             entityId: $entityId,
