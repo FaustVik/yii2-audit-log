@@ -114,22 +114,21 @@ final class Yii2AuditLoggerTest extends TestCase
     {
         $logger = $this->createLoggerWithMockAuditLogger();
 
-        // Initially $logger === null
-        $this->assertNull($this->getPrivateProperty($logger, 'logger'));
+        // Initially auditLogger === null
+        $this->assertNull($this->getPrivateProperty($logger, 'auditLogger'));
 
-        // Calling log() should create AuditLogger
+        // Replace via reflection to avoid actual creation
         $auditLoggerMock = $this->createMock(\FaustVik\AuditLog\Core\Services\AuditLogger::class);
         $auditLoggerMock
             ->method('log');
 
-        // Replace via reflection to avoid actual creation
-        $this->setPrivateProperty($logger, 'logger', $auditLoggerMock);
+        $this->setPrivateProperty($logger, 'auditLogger', $auditLoggerMock);
 
-        $this->assertSame($auditLoggerMock, $this->getPrivateProperty($logger, 'logger'));
+        $this->assertSame($auditLoggerMock, $this->getPrivateProperty($logger, 'auditLogger'));
     }
 
     #[Test]
-    public function getLoggerShouldReturnSameInstanceOnSubsequentCalls(): void
+    public function getLoggerShouldReturnSameInstanceWhenInjected(): void
     {
         $deps = $this->createMockDependencies();
         $logger = new Yii2AuditLogger(
@@ -137,11 +136,9 @@ final class Yii2AuditLoggerTest extends TestCase
             contextProvider: $deps['contextProvider'],
         );
 
-        // Replace logger
         $auditLoggerMock = $this->createMock(\FaustVik\AuditLog\Core\Services\AuditLogger::class);
-        $this->setPrivateProperty($logger, 'logger', $auditLoggerMock);
+        $this->setPrivateProperty($logger, 'auditLogger', $auditLoggerMock);
 
-        // isEnabledForEntity calls getLogger()
         $auditLoggerMock
             ->method('isEnabledForEntity')
             ->willReturn(true);
@@ -149,8 +146,7 @@ final class Yii2AuditLoggerTest extends TestCase
         $this->assertTrue($logger->isEnabledForEntity('App\Models\User'));
         $this->assertTrue($logger->isEnabledForEntity('App\Models\User'));
 
-        // logger should be the same instance
-        $this->assertSame($auditLoggerMock, $this->getPrivateProperty($logger, 'logger'));
+        $this->assertSame($auditLoggerMock, $this->getPrivateProperty($logger, 'auditLogger'));
     }
 
     // ============================================================
@@ -179,7 +175,7 @@ final class Yii2AuditLoggerTest extends TestCase
                 customData: ['reason' => 'test'],
             );
 
-        $this->setPrivateProperty($logger, 'logger', $auditLoggerMock);
+        $this->setPrivateProperty($logger, 'auditLogger', $auditLoggerMock);
 
         $logger->log(
             entityClass: 'App\Models\User',
@@ -217,7 +213,7 @@ final class Yii2AuditLoggerTest extends TestCase
                 customData: [],
             );
 
-        $this->setPrivateProperty($logger, 'logger', $auditLoggerMock);
+        $this->setPrivateProperty($logger, 'auditLogger', $auditLoggerMock);
 
         // Expression without Yii::$app->db → null
         $expression = new Expression('NOW()');
@@ -262,7 +258,7 @@ final class Yii2AuditLoggerTest extends TestCase
                 customData: [],
             );
 
-        $this->setPrivateProperty($logger, 'logger', $auditLoggerMock);
+        $this->setPrivateProperty($logger, 'auditLogger', $auditLoggerMock);
 
         $logger->log(
             entityClass: 'App\Models\User',
@@ -296,7 +292,7 @@ final class Yii2AuditLoggerTest extends TestCase
                 customData: [],
             );
 
-        $this->setPrivateProperty($logger, 'logger', $auditLoggerMock);
+        $this->setPrivateProperty($logger, 'auditLogger', $auditLoggerMock);
 
         $logger->log(
             entityClass: 'App\Models\User',
@@ -327,7 +323,7 @@ final class Yii2AuditLoggerTest extends TestCase
                 customData: ['ip' => '127.0.0.1', 'reason' => 'manual'],
             );
 
-        $this->setPrivateProperty($logger, 'logger', $auditLoggerMock);
+        $this->setPrivateProperty($logger, 'auditLogger', $auditLoggerMock);
 
         $logger->log(
             entityClass: 'App\Models\User',
@@ -362,7 +358,7 @@ final class Yii2AuditLoggerTest extends TestCase
             )
             ->willReturn(['name' => ['old' => 'John', 'new' => 'Jane']]);
 
-        $this->setPrivateProperty($logger, 'logger', $auditLoggerMock);
+        $this->setPrivateProperty($logger, 'auditLogger', $auditLoggerMock);
 
         $result = $logger->formatChangedAttributes(
             oldAttributes: ['name' => 'John'],
@@ -398,7 +394,7 @@ final class Yii2AuditLoggerTest extends TestCase
             )
             ->willReturn([]);
 
-        $this->setPrivateProperty($logger, 'logger', $auditLoggerMock);
+        $this->setPrivateProperty($logger, 'auditLogger', $auditLoggerMock);
 
         $logger->formatChangedAttributes(
             oldAttributes: ['name' => new Expression('NOW()')],
@@ -433,7 +429,7 @@ final class Yii2AuditLoggerTest extends TestCase
             )
             ->willReturn([]);
 
-        $this->setPrivateProperty($logger, 'logger', $auditLoggerMock);
+        $this->setPrivateProperty($logger, 'auditLogger', $auditLoggerMock);
 
         $logger->formatChangedAttributes(
             oldAttributes: ['name' => $rawExpression],
@@ -484,7 +480,7 @@ final class Yii2AuditLoggerTest extends TestCase
                 'storage error',
             );
 
-        $this->setPrivateProperty($logger, 'logger', $auditLoggerMock);
+        $this->setPrivateProperty($logger, 'auditLogger', $auditLoggerMock);
 
         $exception = new \RuntimeException('DB error');
         $logger->handleError($exception, 'storage error');
@@ -508,7 +504,7 @@ final class Yii2AuditLoggerTest extends TestCase
                 $capturedContext = $context;
             });
 
-        $this->setPrivateProperty($logger, 'logger', $auditLoggerMock);
+        $this->setPrivateProperty($logger, 'auditLogger', $auditLoggerMock);
 
         $logger->handleError(new \RuntimeException('Error'), 'expression resolution');
 
@@ -546,7 +542,7 @@ final class Yii2AuditLoggerTest extends TestCase
                 customData: [],
             );
 
-        $this->setPrivateProperty($logger, 'logger', $auditLoggerMock);
+        $this->setPrivateProperty($logger, 'auditLogger', $auditLoggerMock);
 
         $expr = new Expression('NOW()');
         $logger->log(
@@ -585,7 +581,7 @@ final class Yii2AuditLoggerTest extends TestCase
                 customData: [],
             );
 
-        $this->setPrivateProperty($logger, 'logger', $auditLoggerMock);
+        $this->setPrivateProperty($logger, 'auditLogger', $auditLoggerMock);
 
         $logger->log(
             entityClass: 'App\Models\User',
@@ -617,7 +613,7 @@ final class Yii2AuditLoggerTest extends TestCase
             ->with('App\Models\User')
             ->willReturn(true);
 
-        $this->setPrivateProperty($logger, 'logger', $auditLoggerMock);
+        $this->setPrivateProperty($logger, 'auditLogger', $auditLoggerMock);
 
         $this->assertTrue($logger->isEnabledForEntity('App\Models\User'));
     }

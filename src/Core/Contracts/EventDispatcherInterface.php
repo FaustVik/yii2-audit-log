@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace FaustVik\AuditLog\Core\Contracts;
 
 /**
- * Event dispatcher interface (PSR-14 compatible)
+ * Event dispatcher interface
  */
 interface EventDispatcherInterface
 {

@@ -24,8 +24,6 @@ final class Yii2AuditLogger implements AuditLoggerInterface
 
     private const DEFAULT_ALLOWED_USER_TYPES = ['admin', 'user', 'api', 'console', 'system'];
 
-    private ?AuditLogger $logger = null;
-
     /**
      * @var array<int, string> System attributes to exclude
      */
@@ -60,6 +58,12 @@ final class Yii2AuditLogger implements AuditLoggerInterface
      * @var ExpressionResolver|null
      */
     private ?ExpressionResolver $resolver = null;
+
+    /**
+     * @var AuditLogger|null Internal logger override (for testing)
+     * @phpstan-ignore property.unusedType
+     */
+    private ?AuditLogger $auditLogger = null;
 
     /**
      * @var AuditErrorMode Error handling mode
@@ -109,19 +113,19 @@ final class Yii2AuditLogger implements AuditLoggerInterface
      */
     private function getLogger(): AuditLogger
     {
-        if ($this->logger === null) {
-            $this->logger = new AuditLogger(
-                storage: $this->storage,
-                contextProvider: $this->contextProvider,
-                eventDispatcher: $this->eventDispatcher,
-                systemExcludeAttributes: $this->systemExcludeAttributes,
-                logger: $this->psrLogger,
-                errorMode: $this->errorMode,
-                disabledEntities: $this->disabledEntities,
-            );
+        if ($this->auditLogger !== null) {
+            return $this->auditLogger;
         }
 
-        return $this->logger;
+        return new AuditLogger(
+            storage: $this->storage,
+            contextProvider: $this->contextProvider,
+            eventDispatcher: $this->eventDispatcher,
+            systemExcludeAttributes: $this->systemExcludeAttributes,
+            logger: $this->psrLogger,
+            errorMode: $this->errorMode,
+            disabledEntities: $this->disabledEntities,
+        );
     }
 
     /**

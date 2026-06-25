@@ -31,10 +31,9 @@ final class Yii2EventDispatcher implements EventDispatcherInterface
     public function dispatch(object $event): void
     {
         $eventName = $event::class;
+        $yiiEvent = new Yii2AuditEvent(payload: $event);
 
-        // Trigger global handlers through the application
-        // @phpstan-ignore argument.type (Yii2 expects Event|null but handlers receive any object)
-        $this->app->trigger($eventName, $event);
+        $this->app->trigger($eventName, $yiiEvent);
     }
 
     /**

@@ -98,7 +98,11 @@ class AuditLogger implements AuditLoggerInterface
             customData: $customData,
         );
 
-        $this->storage->save($logEntry);
+        try {
+            $this->storage->save($logEntry);
+        } catch (\Throwable $e) {
+            $this->handleError($e, 'saving audit log entry');
+        }
 
         // Dispatch AFTER_LOG event
         $this->dispatchEvent(new AfterLogEvent(
@@ -172,7 +176,7 @@ class AuditLogger implements AuditLoggerInterface
         match ($this->errorMode) {
             AuditErrorMode::Throw => throw new AuditLogException(
                 message: "Audit log error in {$context}: " . $e->getMessage(),
-                code: $e->getCode(),
+                code: is_int($e->getCode()) ? $e->getCode() : 0,
                 previous: $e,
             ),
             AuditErrorMode::Log => $this->logger !== null
