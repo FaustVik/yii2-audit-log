@@ -20,12 +20,14 @@ use Psr\Log\LoggerInterface;
  */
 final class Yii2AuditLogger implements AuditLoggerInterface
 {
-    private ?AuditLogger $logger = null;
+    private const DEFAULT_SYSTEM_EXCLUDE_ATTRIBUTES = ['created_at', 'updated_at', 'date_created', 'date_updated'];
+
+    private const DEFAULT_ALLOWED_USER_TYPES = ['admin', 'user', 'api', 'console', 'system'];
 
     /**
      * @var array<int, string> System attributes to exclude
      */
-    public array $systemExcludeAttributes = ['created_at', 'updated_at', 'date_created', 'date_updated'];
+    public array $systemExcludeAttributes = self::DEFAULT_SYSTEM_EXCLUDE_ATTRIBUTES;
 
     /**
      * @var array<int, string> Entity classes to disable logging for
@@ -40,7 +42,7 @@ final class Yii2AuditLogger implements AuditLoggerInterface
     /**
      * @var array<int, string> Allowed user types
      */
-    public array $allowedUserTypes = ['admin', 'user', 'api', 'console', 'system'];
+    public array $allowedUserTypes = self::DEFAULT_ALLOWED_USER_TYPES;
 
     /**
      * @var bool Resolve Expression objects
@@ -56,6 +58,12 @@ final class Yii2AuditLogger implements AuditLoggerInterface
      * @var ExpressionResolver|null
      */
     private ?ExpressionResolver $resolver = null;
+
+    /**
+     * @var AuditLogger|null Internal logger override (for testing)
+     * @phpstan-ignore property.unusedType
+     */
+    private ?AuditLogger $auditLogger = null;
 
     /**
      * @var AuditErrorMode Error handling mode
@@ -81,10 +89,10 @@ final class Yii2AuditLogger implements AuditLoggerInterface
         public AuditStorageInterface $storage,
         public ContextProviderInterface $contextProvider,
         public ?EventDispatcherInterface $eventDispatcher = null,
-        array $systemExcludeAttributes = ['created_at', 'updated_at', 'date_created', 'date_updated'],
+        array $systemExcludeAttributes = self::DEFAULT_SYSTEM_EXCLUDE_ATTRIBUTES,
         array $disabledEntities = [],
         array $userTypeMapping = [],
-        array $allowedUserTypes = ['admin', 'user', 'api', 'console', 'system'],
+        array $allowedUserTypes = self::DEFAULT_ALLOWED_USER_TYPES,
         bool $resolveExpressions = true,
         ?LoggerInterface $psrLogger = null,
         AuditErrorMode $errorMode = AuditErrorMode::Ignore,
@@ -105,19 +113,19 @@ final class Yii2AuditLogger implements AuditLoggerInterface
      */
     private function getLogger(): AuditLogger
     {
-        if ($this->logger === null) {
-            $this->logger = new AuditLogger(
-                storage: $this->storage,
-                contextProvider: $this->contextProvider,
-                eventDispatcher: $this->eventDispatcher,
-                systemExcludeAttributes: $this->systemExcludeAttributes,
-                logger: $this->psrLogger,
-                errorMode: $this->errorMode,
-                disabledEntities: $this->disabledEntities,
-            );
+        if ($this->auditLogger !== null) {
+            return $this->auditLogger;
         }
 
-        return $this->logger;
+        return new AuditLogger(
+            storage: $this->storage,
+            contextProvider: $this->contextProvider,
+            eventDispatcher: $this->eventDispatcher,
+            systemExcludeAttributes: $this->systemExcludeAttributes,
+            logger: $this->psrLogger,
+            errorMode: $this->errorMode,
+            disabledEntities: $this->disabledEntities,
+        );
     }
 
     /**
@@ -159,6 +167,12 @@ final class Yii2AuditLogger implements AuditLoggerInterface
         // Resolve Expression in changedAttributes
         if ($this->resolveExpressions && !empty($changedAttributes)) {
             $changedAttributes = $this->resolveExpressionsInChanges($changedAttributes);
+        }
+
+        // Resolve Expression in customData
+        if ($this->resolveExpressions && !empty($customData)) {
+            $resolver = $this->getResolver();
+            $customData = array_map([$resolver, 'resolve'], $customData);
         }
 
         $this->getLogger()->log(

@@ -6,6 +6,7 @@
     "minimum-stability": "stable",
     "require": {
         "php": ">=8.2",
+        "psr/event-dispatcher": "^1.0",
         "psr/log": "^3.0",
         "yiisoft/yii2": "^2.0.51"
     },
@@ -29,7 +30,8 @@
     "scripts": {
         "cs-check": "php-cs-fixer fix --dry-run --diff",
         "cs-fix": "php-cs-fixer fix",
-        "phpstan": "phpstan analyse"
+        "phpstan": "phpstan analyse",
+        "rector": "rector process --dry-run"
     },
     "config": {
         "sort-packages": true,

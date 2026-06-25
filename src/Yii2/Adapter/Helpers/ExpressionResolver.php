@@ -31,6 +31,10 @@ final class ExpressionResolver
         try {
             $sql = 'SELECT ' . $value->expression;
 
+            if (Yii::$app === null || !Yii::$app->has('db')) {
+                return null;
+            }
+
             return Yii::$app->db->createCommand($sql, $value->params)->queryScalar();
         } catch (\Throwable) {
             return null;

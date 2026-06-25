@@ -27,7 +27,8 @@ class AuditLogBehavior extends Behavior
     public array $excludeAttributes = [];
 
     /**
-     * @var array<string, callable|string> Custom fields for logging
+     * @var array<string, callable(ActiveRecord): mixed|string> Custom fields for logging.
+     * Callable receives the model as first argument.
      */
     public array $customFields = [];
 
@@ -166,7 +167,7 @@ class AuditLogBehavior extends Behavior
         foreach ($this->customFields as $field => $callable) {
             try {
                 if (is_callable($callable)) {
-                    $customData[$field] = call_user_func($callable);
+                    $customData[$field] = call_user_func($callable, $this->owner);
                     // @phpstan-ignore function.alreadyNarrowedType (string is method name)
                 } elseif (is_string($callable) && method_exists($this->owner, $callable)) {
                     $customData[$field] = $this->owner->$callable();
