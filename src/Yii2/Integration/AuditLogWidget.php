@@ -23,7 +23,7 @@ use yii\db\ActiveRecord;
  *     'model' => $user,
  *     'limit' => 50,
  *     'title' => 'Change History',
- *     'displayMode' => DisplayMode::TEXT,
+ *     'displayMode' => DisplayMode::Text,
  * ]) ?>
  * ```
  */
@@ -87,7 +87,7 @@ class AuditLogWidget extends Widget
     {
         $logs = $this->fetchLogs();
 
-        return $this->renderFile(__DIR__ . '/views/audit-log-widget.php', [
+        return $this->renderFile($this->getWidgetViewPath(), [
             'logs' => $logs,
             'title' => $this->title,
             'cssClasses' => $this->cssClasses,
@@ -129,5 +129,10 @@ class AuditLogWidget extends Widget
         }
 
         return Yii::createObject(AuditStorageInterface::class);
+    }
+
+    protected function getWidgetViewPath(): string
+    {
+        return __DIR__ . '/views/audit-log-widget.php';
     }
 }
