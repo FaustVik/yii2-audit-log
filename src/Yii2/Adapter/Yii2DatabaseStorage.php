@@ -23,6 +23,11 @@ final class Yii2DatabaseStorage implements AuditStorageInterface
      */
     public string $logTableSuffix;
 
+    /**
+     * @var array<string, string> Cache for table names resolved per entity class
+     */
+    private array $tableNameCache = [];
+
     public function __construct(string $logTableSuffix = '_log')
     {
         $this->logTableSuffix = $logTableSuffix;
@@ -56,7 +61,7 @@ final class Yii2DatabaseStorage implements AuditStorageInterface
 
     /**
      * @return array<int, LogEntry>
-     * @deprecated Используйте getWithFilters() вместо этого
+     * @deprecated Use getWithFilters() instead
      */
     public function getForEntity(
         string $entityClass,
@@ -85,38 +90,8 @@ final class Yii2DatabaseStorage implements AuditStorageInterface
         int $offset = 0,
         string $orderBy = 'created_at DESC',
     ): array {
-        $logTableName = $this->getLogTableName($entityClass);
-
-        $query = (new Query())
-            ->from($logTableName)
-            ->orderBy($this->sanitizeOrderBy($orderBy));
-
-        if ($entityId !== null) {
-            $query->where(['entity_id' => $entityId]);
-        }
-
-        // Filter by operation
-        if ($operation !== null) {
-            $query->andWhere(['operation' => $operation->value]);
-        }
-
-        // Filter by user
-        if ($userId !== null) {
-            $query->andWhere(['user_id' => $userId]);
-        }
-
-        // Filter by user type
-        if ($userType !== null) {
-            $query->andWhere(['user_type' => $userType]);
-        }
-
-        // Filter by date
-        if ($dateFrom !== null) {
-            $query->andWhere(['>=', 'created_at', $dateFrom . ' 00:00:00']);
-        }
-        if ($dateTo !== null) {
-            $query->andWhere(['<=', 'created_at', $dateTo . ' 23:59:59']);
-        }
+        $query = $this->buildBaseQuery($entityClass, $entityId, $operation, $userId, $userType, $dateFrom, $dateTo);
+        $query->orderBy($this->sanitizeOrderBy($orderBy));
 
         if ($limit > 0) {
             $query->limit($limit);
@@ -125,9 +100,7 @@ final class Yii2DatabaseStorage implements AuditStorageInterface
             $query->offset($offset);
         }
 
-        $rows = $query->all();
-
-        return $this->hydrateLogEntries($rows, $entityClass);
+        return $this->hydrateLogEntries($query->all(), $entityClass);
     }
 
     public function countWithFilters(
@@ -139,31 +112,36 @@ final class Yii2DatabaseStorage implements AuditStorageInterface
         ?string $dateFrom = null,
         ?string $dateTo = null,
     ): int {
-        $logTableName = $this->getLogTableName($entityClass);
+        // @phpstan-ignore return.type (count() always returns non-negative)
+        return (int) $this->buildBaseQuery($entityClass, $entityId, $operation, $userId, $userType, $dateFrom, $dateTo)->count();
+    }
 
-        $query = (new Query())
-            ->from($logTableName);
+    /**
+     * Build a base query with common filters applied.
+     */
+    private function buildBaseQuery(
+        string $entityClass,
+        int|string|null $entityId,
+        ?Operation $operation,
+        int|string|null $userId,
+        ?string $userType,
+        ?string $dateFrom,
+        ?string $dateTo,
+    ): Query {
+        $query = (new Query())->from($this->getLogTableName($entityClass));
 
         if ($entityId !== null) {
             $query->where(['entity_id' => $entityId]);
         }
-
-        // Filter by operation
         if ($operation !== null) {
             $query->andWhere(['operation' => $operation->value]);
         }
-
-        // Filter by user
         if ($userId !== null) {
             $query->andWhere(['user_id' => $userId]);
         }
-
-        // Filter by user type
         if ($userType !== null) {
             $query->andWhere(['user_type' => $userType]);
         }
-
-        // Filter by date
         if ($dateFrom !== null) {
             $query->andWhere(['>=', 'created_at', $dateFrom . ' 00:00:00']);
         }
@@ -171,8 +149,7 @@ final class Yii2DatabaseStorage implements AuditStorageInterface
             $query->andWhere(['<=', 'created_at', $dateTo . ' 23:59:59']);
         }
 
-        // @phpstan-ignore return.type (count() always returns non-negative)
-        return (int) $query->count();
+        return $query;
     }
 
     /**
@@ -220,13 +197,11 @@ final class Yii2DatabaseStorage implements AuditStorageInterface
      */
     private function decodeJsonIfNeeded(mixed $data): array
     {
-        // If array — return as is
         if (is_array($data)) {
             // @phpstan-ignore return.type (DB returns associative arrays)
             return $data;
         }
 
-        // If string — decode JSON (for old records)
         if (is_string($data)) {
             try {
                 $decoded = json_decode($data, true, 512, JSON_THROW_ON_ERROR);
@@ -244,33 +219,37 @@ final class Yii2DatabaseStorage implements AuditStorageInterface
      */
     public function getLogTableName(string $entityClass): string
     {
-        try {
-            // @phpstan-ignore argument.type (entity class may not be a valid class)
-            $shortName = (new \ReflectionClass($entityClass))->getShortName();
-        } catch (\ReflectionException) {
-            $shortName = basename(str_replace('\\', '/', $entityClass));
+        if (isset($this->tableNameCache[$entityClass])) {
+            return $this->tableNameCache[$entityClass];
         }
 
-        // For ActiveRecord, use table name from model
         if (is_subclass_of($entityClass, ActiveRecord::class)) {
             $tableName = $entityClass::tableName();
         } else {
-            // For other entities, use snake_case of class name
+            try {
+                // @phpstan-ignore argument.type (entity class may not be a valid class)
+                $shortName = (new \ReflectionClass($entityClass))->getShortName();
+            } catch (\ReflectionException) {
+                $shortName = basename(str_replace('\\', '/', $entityClass));
+            }
             $tableName = $this->camelToSnake($shortName);
         }
 
         // Handle Yii2 table prefix notation: {{%tableName}}
         if (preg_match('/^\{\{%(.*?)}}$/', $tableName, $matches)) {
-            return '{{%' . $matches[1] . $this->logTableSuffix . '}}';
+            $resolved = '{{%' . $matches[1] . $this->logTableSuffix . '}}';
+        } else {
+            $resolved = $tableName . $this->logTableSuffix;
         }
 
-        return $tableName . $this->logTableSuffix;
+        return $this->tableNameCache[$entityClass] = $resolved;
     }
 
     /**
-     * Sanitize orderBy parameter to prevent SQL injection
+     * Sanitize orderBy parameter to prevent SQL injection.
      *
-     * Only allows: column_name ASC|DESC
+     * Falls back to 'created_at DESC' for unrecognised column/direction.
+     * Allowed columns: id, entity_id, operation, created_at, user_id, user_type, route, module.
      */
     private function sanitizeOrderBy(string $orderBy): string
     {

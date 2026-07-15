@@ -7,6 +7,7 @@ namespace FaustVik\AuditLog\Core\Query;
 use FaustVik\AuditLog\Core\Contracts\AuditStorageInterface;
 use FaustVik\AuditLog\Core\DTO\LogEntry;
 use FaustVik\AuditLog\Core\Enums\Operation;
+use FaustVik\AuditLog\Core\Exceptions\AuditLogException;
 
 /**
  * Query object for filtering and retrieving logs
@@ -181,15 +182,12 @@ final class AuditLogQuery
      * Get all records matching filters
      *
      * @return array<int, LogEntry>
+     * @throws AuditLogException if forEntity() was not called
      */
     public function all(): array
     {
-        if ($this->entityClass === null) {
-            return [];
-        }
-
         return $this->storage->getWithFilters(
-            entityClass: $this->entityClass,
+            entityClass: $this->requireEntityClass(),
             entityId: $this->entityId,
             operation: $this->operation,
             userId: $this->userId,
@@ -204,15 +202,13 @@ final class AuditLogQuery
 
     /**
      * Get first record
+     *
+     * @throws AuditLogException if forEntity() was not called
      */
     public function one(): ?LogEntry
     {
-        if ($this->entityClass === null) {
-            return null;
-        }
-
         $results = $this->storage->getWithFilters(
-            entityClass: $this->entityClass,
+            entityClass: $this->requireEntityClass(),
             entityId: $this->entityId,
             operation: $this->operation,
             userId: $this->userId,
@@ -229,15 +225,13 @@ final class AuditLogQuery
 
     /**
      * Get records count
+     *
+     * @throws AuditLogException if forEntity() was not called
      */
     public function count(): int
     {
-        if ($this->entityClass === null) {
-            return 0;
-        }
-
         return $this->storage->countWithFilters(
-            entityClass: $this->entityClass,
+            entityClass: $this->requireEntityClass(),
             entityId: $this->entityId,
             operation: $this->operation,
             userId: $this->userId,
@@ -245,5 +239,14 @@ final class AuditLogQuery
             dateFrom: $this->dateFrom,
             dateTo: $this->dateTo,
         );
+    }
+
+    private function requireEntityClass(): string
+    {
+        if ($this->entityClass === null) {
+            throw new AuditLogException('Call forEntity() before executing the query.');
+        }
+
+        return $this->entityClass;
     }
 }

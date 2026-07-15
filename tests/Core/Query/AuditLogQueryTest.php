@@ -7,6 +7,7 @@ namespace FaustVik\AuditLog\Tests\Core\Query;
 use FaustVik\AuditLog\Core\Contracts\AuditStorageInterface;
 use FaustVik\AuditLog\Core\DTO\LogEntry;
 use FaustVik\AuditLog\Core\Enums\Operation;
+use FaustVik\AuditLog\Core\Exceptions\AuditLogException;
 use FaustVik\AuditLog\Core\Query\AuditLogQuery;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
@@ -44,16 +45,14 @@ final class AuditLogQueryTest extends TestCase
     // ============================================================
 
     #[Test]
-    public function allShouldReturnEmptyArrayWhenEntityClassNotSet(): void
+    public function allShouldThrowWhenEntityClassNotSet(): void
     {
         $storage = $this->createMock(AuditStorageInterface::class);
-        $storage
-            ->expects($this->never())
-            ->method('getWithFilters');
+        $storage->expects($this->never())->method('getWithFilters');
 
-        $query = new AuditLogQuery($storage);
+        $this->expectException(AuditLogException::class);
 
-        $this->assertSame([], $query->all());
+        (new AuditLogQuery($storage))->all();
     }
 
     #[Test]
@@ -132,16 +131,14 @@ final class AuditLogQueryTest extends TestCase
     // ============================================================
 
     #[Test]
-    public function oneShouldReturnNullWhenEntityClassNotSet(): void
+    public function oneShouldThrowWhenEntityClassNotSet(): void
     {
         $storage = $this->createMock(AuditStorageInterface::class);
-        $storage
-            ->expects($this->never())
-            ->method('getWithFilters');
+        $storage->expects($this->never())->method('getWithFilters');
 
-        $query = new AuditLogQuery($storage);
+        $this->expectException(AuditLogException::class);
 
-        $this->assertNull($query->one());
+        (new AuditLogQuery($storage))->one();
     }
 
     #[Test]
@@ -209,16 +206,14 @@ final class AuditLogQueryTest extends TestCase
     // ============================================================
 
     #[Test]
-    public function countShouldReturnZeroWhenEntityClassNotSet(): void
+    public function countShouldThrowWhenEntityClassNotSet(): void
     {
         $storage = $this->createMock(AuditStorageInterface::class);
-        $storage
-            ->expects($this->never())
-            ->method('countWithFilters');
+        $storage->expects($this->never())->method('countWithFilters');
 
-        $query = new AuditLogQuery($storage);
+        $this->expectException(AuditLogException::class);
 
-        $this->assertSame(0, $query->count());
+        (new AuditLogQuery($storage))->count();
     }
 
     #[Test]

@@ -102,6 +102,7 @@ class AuditLogger implements AuditLoggerInterface
             $this->storage->save($logEntry);
         } catch (\Throwable $e) {
             $this->handleError($e, 'saving audit log entry');
+            return;
         }
 
         // Dispatch AFTER_LOG event
@@ -134,12 +135,15 @@ class AuditLogger implements AuditLoggerInterface
         $excludeAttributes = array_merge($this->systemExcludeAttributes, $excludeAttributes);
         $changes = [];
 
-        foreach ($newAttributes as $attribute => $newValue) {
+        $allKeys = array_unique(array_merge(array_keys($oldAttributes), array_keys($newAttributes)));
+
+        foreach ($allKeys as $attribute) {
             if (in_array($attribute, $excludeAttributes, true)) {
                 continue;
             }
 
             $oldValue = $oldAttributes[$attribute] ?? null;
+            $newValue = $newAttributes[$attribute] ?? null;
 
             if ($oldValue !== $newValue) {
                 $changes[$attribute] = [
@@ -168,6 +172,7 @@ class AuditLogger implements AuditLoggerInterface
     /**
      * Handle error based on configured error mode
      *
+     * @internal Called by Yii2AuditLogger facade; not part of the stable public API.
      * @param \Throwable $e The exception
      * @param string $context Description of where the error occurred
      */

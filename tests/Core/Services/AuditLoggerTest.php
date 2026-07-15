@@ -156,6 +156,38 @@ final class AuditLoggerTest extends TestCase
     }
 
     #[Test]
+    public function logShouldNotDispatchAfterLogEventWhenSaveFails(): void
+    {
+        $storage = $this->createMock(AuditStorageInterface::class);
+        $contextProvider = $this->createMock(ContextProviderInterface::class);
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+
+        $contextProvider
+            ->method('getInfo')
+            ->willReturn(new ContextInfo(
+                userId: null, userAgent: null, route: null,
+                module: null, ipAddress: null, userType: 'system',
+            ));
+
+        $storage->method('save')->willThrowException(new \RuntimeException('DB error'));
+
+        // Only BeforeLogEvent should be dispatched; AfterLogEvent must not fire
+        $eventDispatcher
+            ->expects($this->once())
+            ->method('dispatch')
+            ->with($this->isInstanceOf(BeforeLogEvent::class));
+
+        $logger = new AuditLogger(
+            storage: $storage,
+            contextProvider: $contextProvider,
+            eventDispatcher: $eventDispatcher,
+            errorMode: AuditErrorMode::Ignore,
+        );
+
+        $logger->log(entityClass: 'App\Models\User', entityId: 1, operation: Operation::Insert);
+    }
+
+    #[Test]
     public function logShouldCallErrorHandlerWithLogMode(): void
     {
         $storage = $this->createMock(AuditStorageInterface::class);
@@ -406,8 +438,8 @@ final class AuditLoggerTest extends TestCase
             ->willReturnCallback(function (object $event): void {
                 if ($event instanceof BeforeLogEvent) {
                     // Modify data in event
-                    $event->setChangedAttributes(['email' => ['old' => 'old@test.com', 'new' => 'new@test.com']]);
-                    $event->addCustomData('audit_reason', 'manual review');
+                    $event->changedAttributes = ['email' => ['old' => 'old@test.com', 'new' => 'new@test.com']];
+                    $event->customData['audit_reason'] = 'manual review';
                 }
             });
 
@@ -702,6 +734,25 @@ final class AuditLoggerTest extends TestCase
 
         // All attributes should be excluded
         $this->assertEmpty($changes);
+    }
+
+    #[Test]
+    public function formatChangedAttributesShouldDetectRemovedKeys(): void
+    {
+        $logger = new AuditLogger(
+            storage: $this->createMock(AuditStorageInterface::class),
+            contextProvider: $this->createMock(ContextProviderInterface::class),
+            systemExcludeAttributes: [],
+        );
+
+        $oldAttributes = ['name' => 'John', 'nickname' => 'jd'];
+        $newAttributes = ['name' => 'John']; // 'nickname' removed
+
+        $changes = $logger->formatChangedAttributes($oldAttributes, $newAttributes);
+
+        $this->assertArrayHasKey('nickname', $changes);
+        $this->assertSame('jd', $changes['nickname']['old']);
+        $this->assertNull($changes['nickname']['new']);
     }
 
     // ============================================================

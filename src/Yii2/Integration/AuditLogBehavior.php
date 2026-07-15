@@ -54,6 +54,11 @@ class AuditLogBehavior extends Behavior
      */
     private array $_oldAttributes = [];
 
+    /**
+     * @var AuditLoggerInterface|null Resolved service instance (cached per request)
+     */
+    private ?AuditLoggerInterface $_resolvedService = null;
+
     public function attach($owner): void
     {
         // @phpstan-ignore instanceof.alwaysTrue (runtime safety check)
@@ -198,10 +203,10 @@ class AuditLogBehavior extends Behavior
     private function getAuditService(): AuditLoggerInterface
     {
         if ($this->auditService !== null) {
-            return $this->auditService; // For tests
+            return $this->auditService;
         }
 
-        return Yii::createObject(AuditLoggerInterface::class);
+        return $this->_resolvedService ??= Yii::createObject(AuditLoggerInterface::class);
     }
 
     private function isLoggingEnabled(): bool

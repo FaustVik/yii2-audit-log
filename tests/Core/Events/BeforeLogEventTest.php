@@ -30,7 +30,7 @@ final class BeforeLogEventTest extends TestCase
     }
 
     #[Test]
-    public function setChangedAttributesShouldReplaceAll(): void
+    public function changedAttributesCanBeReplacedDirectly(): void
     {
         $event = new BeforeLogEvent(
             entityClass: 'App\Models\User',
@@ -41,10 +41,10 @@ final class BeforeLogEventTest extends TestCase
 
         $this->assertCount(1, $event->changedAttributes);
 
-        $event->setChangedAttributes([
+        $event->changedAttributes = [
             'email' => ['old' => 'old@test.com', 'new' => 'new@test.com'],
             'phone' => ['old' => '123', 'new' => '456'],
-        ]);
+        ];
 
         $this->assertCount(2, $event->changedAttributes);
         $this->assertArrayHasKey('email', $event->changedAttributes);
@@ -53,7 +53,7 @@ final class BeforeLogEventTest extends TestCase
     }
 
     #[Test]
-    public function addChangedAttributeShouldAppend(): void
+    public function changedAttributeCanBeAppended(): void
     {
         $event = new BeforeLogEvent(
             entityClass: 'App\Models\User',
@@ -62,7 +62,7 @@ final class BeforeLogEventTest extends TestCase
             changedAttributes: ['name' => ['old' => 'John', 'new' => 'Jane']],
         );
 
-        $event->addChangedAttribute('email', ['old' => 'old@test.com', 'new' => 'new@test.com']);
+        $event->changedAttributes['email'] = ['old' => 'old@test.com', 'new' => 'new@test.com'];
 
         $this->assertCount(2, $event->changedAttributes);
         $this->assertArrayHasKey('name', $event->changedAttributes);
@@ -71,7 +71,7 @@ final class BeforeLogEventTest extends TestCase
     }
 
     #[Test]
-    public function removeChangedAttributeShouldDelete(): void
+    public function changedAttributeCanBeRemoved(): void
     {
         $event = new BeforeLogEvent(
             entityClass: 'App\Models\User',
@@ -83,7 +83,7 @@ final class BeforeLogEventTest extends TestCase
             ],
         );
 
-        $event->removeChangedAttribute('name');
+        unset($event->changedAttributes['name']);
 
         $this->assertCount(1, $event->changedAttributes);
         $this->assertArrayNotHasKey('name', $event->changedAttributes);
@@ -91,7 +91,7 @@ final class BeforeLogEventTest extends TestCase
     }
 
     #[Test]
-    public function setCustomDataShouldReplaceAll(): void
+    public function customDataCanBeReplacedDirectly(): void
     {
         $event = new BeforeLogEvent(
             entityClass: 'App\Models\User',
@@ -102,7 +102,7 @@ final class BeforeLogEventTest extends TestCase
 
         $this->assertSame(['original' => 'data'], $event->customData);
 
-        $event->setCustomData(['new_key' => 'new_value', 'another' => 'value']);
+        $event->customData = ['new_key' => 'new_value', 'another' => 'value'];
 
         $this->assertCount(2, $event->customData);
         $this->assertArrayHasKey('new_key', $event->customData);
@@ -111,7 +111,7 @@ final class BeforeLogEventTest extends TestCase
     }
 
     #[Test]
-    public function addCustomDataShouldAppend(): void
+    public function customDataCanBeAppended(): void
     {
         $event = new BeforeLogEvent(
             entityClass: 'App\Models\User',
@@ -120,7 +120,7 @@ final class BeforeLogEventTest extends TestCase
             customData: ['original' => 'data'],
         );
 
-        $event->addCustomData('new_key', 'new_value');
+        $event->customData['new_key'] = 'new_value';
 
         $this->assertCount(2, $event->customData);
         $this->assertSame('data', $event->customData['original']);
@@ -128,7 +128,7 @@ final class BeforeLogEventTest extends TestCase
     }
 
     #[Test]
-    public function removeCustomDataShouldDelete(): void
+    public function customDataCanBeRemoved(): void
     {
         $event = new BeforeLogEvent(
             entityClass: 'App\Models\User',
@@ -137,7 +137,7 @@ final class BeforeLogEventTest extends TestCase
             customData: ['key1' => 'value1', 'key2' => 'value2'],
         );
 
-        $event->removeCustomData('key1');
+        unset($event->customData['key1']);
 
         $this->assertCount(1, $event->customData);
         $this->assertArrayNotHasKey('key1', $event->customData);
