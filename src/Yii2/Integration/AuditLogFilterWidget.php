@@ -171,7 +171,8 @@ class AuditLogFilterWidget extends AuditLogWidget
         }
 
         $query = (new AuditLogQuery($this->getStorage()))
-            ->forEntity($this->model::class, $entityId)
+            ->forEntityClass($this->model::class)
+            ->forEntityId($entityId)
             ->orderBy('created_at DESC');
 
         $op = $filters[FilterParam::Operation->value] ?? null;

@@ -14,12 +14,19 @@ use FaustVik\AuditLog\Core\Exceptions\AuditLogException;
  *
  * @example
  * ```php
+ * // All updates for User #5
  * $logs = (new AuditLogQuery($storage))
- *     ->forEntity(User::class, 5)
+ *     ->forEntityClass(User::class)
+ *     ->forEntityId(5)
  *     ->operation(Operation::Update)
- *     ->userId(5)
  *     ->dateRange('2025-01-01', '2025-12-31')
  *     ->limit(50)
+ *     ->all();
+ *
+ * // All changes across all User records today
+ * $logs = (new AuditLogQuery($storage))
+ *     ->forEntityClass(User::class)
+ *     ->dateRange(date('Y-m-d'), date('Y-m-d'))
  *     ->all();
  * ```
  */
@@ -81,14 +88,26 @@ final class AuditLogQuery
     }
 
     /**
-     * Filter by entity
+     * Set the entity class to query (required before executing).
      *
      * @param string $entityClass Entity class (FQCN)
-     * @param int|string $entityId Entity ID
      */
-    public function forEntity(string $entityClass, int|string $entityId): self
+    public function forEntityClass(string $entityClass): self
     {
         $this->entityClass = $entityClass;
+
+        return $this;
+    }
+
+    /**
+     * Narrow the query to a specific entity ID (optional).
+     *
+     * Omit to query all records of the entity class.
+     *
+     * @param int|string $entityId Entity ID
+     */
+    public function forEntityId(int|string $entityId): self
+    {
         $this->entityId = $entityId;
 
         return $this;
@@ -181,7 +200,7 @@ final class AuditLogQuery
     /**
      * Get all records matching filters
      *
-     * @throws AuditLogException if forEntity() was not called
+     * @throws AuditLogException if forEntityClass() was not called
      * @return array<int, LogEntry>
      */
     public function all(): array
@@ -203,7 +222,7 @@ final class AuditLogQuery
     /**
      * Get first record
      *
-     * @throws AuditLogException if forEntity() was not called
+     * @throws AuditLogException if forEntityClass() was not called
      */
     public function one(): ?LogEntry
     {
@@ -226,7 +245,7 @@ final class AuditLogQuery
     /**
      * Get records count
      *
-     * @throws AuditLogException if forEntity() was not called
+     * @throws AuditLogException if forEntityClass() was not called
      */
     public function count(): int
     {
@@ -244,7 +263,7 @@ final class AuditLogQuery
     private function requireEntityClass(): string
     {
         if ($this->entityClass === null) {
-            throw new AuditLogException('Call forEntity() before executing the query.');
+            throw new AuditLogException('Call forEntityClass() before executing the query.');
         }
 
         return $this->entityClass;

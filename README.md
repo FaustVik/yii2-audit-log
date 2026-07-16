@@ -157,11 +157,19 @@ use FaustVik\AuditLog\Core\Contracts\AuditStorageInterface;
 
 $storage = Yii::createObject(AuditStorageInterface::class);
 
+// All changes for a specific User record
 $logs = (new AuditLogQuery($storage))
-    ->forEntity(User::class, $userId)
+    ->forEntityClass(User::class)
+    ->forEntityId($userId)
     ->operation(\FaustVik\AuditLog\Core\Enums\Operation::Update)
     ->dateRange('2025-01-01', '2025-12-31')
     ->limit(50)
+    ->all();
+
+// All changes across all User records today (no specific ID required)
+$allUserChangesToday = (new AuditLogQuery($storage))
+    ->forEntityClass(User::class)
+    ->dateRange(date('Y-m-d'), date('Y-m-d'))
     ->all();
 ```
 

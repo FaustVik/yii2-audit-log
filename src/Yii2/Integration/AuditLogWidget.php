@@ -145,7 +145,8 @@ class AuditLogWidget extends Widget
         }
 
         $query = (new AuditLogQuery($this->getStorage()))
-            ->forEntity($this->model::class, $entityId)
+            ->forEntityClass($this->model::class)
+            ->forEntityId($entityId)
             ->limit($limit)
             ->offset($offset)
             ->orderBy('created_at DESC');
@@ -165,7 +166,8 @@ class AuditLogWidget extends Widget
         }
 
         return (new AuditLogQuery($this->getStorage()))
-            ->forEntity($this->model::class, $entityId)
+            ->forEntityClass($this->model::class)
+            ->forEntityId($entityId)
             ->count();
     }
 
