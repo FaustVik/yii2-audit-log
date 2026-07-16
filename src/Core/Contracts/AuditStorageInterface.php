@@ -18,6 +18,16 @@ interface AuditStorageInterface
     public function save(LogEntry $entry): void;
 
     /**
+     * Save multiple log entries atomically.
+     *
+     * All entries are saved in a single transaction — either all succeed or all fail.
+     *
+     * @param array<int, LogEntry> $entries
+     * @throws \FaustVik\AuditLog\Core\Exceptions\StorageException on failure (transaction is rolled back)
+     */
+    public function saveBatch(array $entries): void;
+
+    /**
      * Get logs for an entity
      *
      * @param string $entityClass Entity class (FQCN)

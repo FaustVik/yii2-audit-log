@@ -617,4 +617,136 @@ final class Yii2AuditLoggerTest extends TestCase
 
         $this->assertTrue($logger->isEnabledForEntity('App\Models\User'));
     }
+
+    // ============================================================
+    // Group G: logBatch() delegation and expression resolution
+    // ============================================================
+
+    #[Test]
+    public function logBatchShouldDelegateToCoreLogger(): void
+    {
+        $deps = $this->createMockDependencies();
+        $logger = new Yii2AuditLogger(
+            storage: $deps['storage'],
+            contextProvider: $deps['contextProvider'],
+            resolveExpressions: false,
+        );
+
+        $items = [
+            ['entityClass' => 'App\Models\User', 'entityId' => 1, 'operation' => Operation::Update],
+            ['entityClass' => 'App\Models\User', 'entityId' => 2, 'operation' => Operation::Delete],
+        ];
+
+        $auditLoggerMock = $this->createMock(\FaustVik\AuditLog\Core\Services\AuditLogger::class);
+        $auditLoggerMock
+            ->expects($this->once())
+            ->method('logBatch')
+            ->with($items);
+
+        $this->setPrivateProperty($logger, 'auditLogger', $auditLoggerMock);
+
+        $logger->logBatch($items);
+    }
+
+    #[Test]
+    public function logBatchShouldResolveExpressionsInChangedAttributes(): void
+    {
+        $deps = $this->createMockDependencies();
+        $logger = new Yii2AuditLogger(
+            storage: $deps['storage'],
+            contextProvider: $deps['contextProvider'],
+            resolveExpressions: true,
+        );
+
+        $auditLoggerMock = $this->createMock(\FaustVik\AuditLog\Core\Services\AuditLogger::class);
+        $auditLoggerMock
+            ->expects($this->once())
+            ->method('logBatch')
+            ->with([
+                [
+                    'entityClass' => 'App\Models\User',
+                    'entityId' => 1,
+                    'operation' => Operation::Update,
+                    'changedAttributes' => ['status' => ['old' => 'active', 'new' => null]],
+                ],
+            ]);
+
+        $this->setPrivateProperty($logger, 'auditLogger', $auditLoggerMock);
+
+        $logger->logBatch([
+            [
+                'entityClass' => 'App\Models\User',
+                'entityId' => 1,
+                'operation' => Operation::Update,
+                'changedAttributes' => ['status' => ['old' => 'active', 'new' => new Expression('NOW()')]],
+            ],
+        ]);
+    }
+
+    #[Test]
+    public function logBatchShouldResolveExpressionsInCustomData(): void
+    {
+        $deps = $this->createMockDependencies();
+        $logger = new Yii2AuditLogger(
+            storage: $deps['storage'],
+            contextProvider: $deps['contextProvider'],
+            resolveExpressions: true,
+        );
+
+        $auditLoggerMock = $this->createMock(\FaustVik\AuditLog\Core\Services\AuditLogger::class);
+        $auditLoggerMock
+            ->expects($this->once())
+            ->method('logBatch')
+            ->with([
+                [
+                    'entityClass' => 'App\Models\User',
+                    'entityId' => 1,
+                    'operation' => Operation::Insert,
+                    'customData' => ['ts' => null],
+                ],
+            ]);
+
+        $this->setPrivateProperty($logger, 'auditLogger', $auditLoggerMock);
+
+        $logger->logBatch([
+            [
+                'entityClass' => 'App\Models\User',
+                'entityId' => 1,
+                'operation' => Operation::Insert,
+                'customData' => ['ts' => new Expression('NOW()')],
+            ],
+        ]);
+    }
+
+    #[Test]
+    public function logBatchShouldSkipResolveWhenDisabled(): void
+    {
+        $deps = $this->createMockDependencies();
+        $logger = new Yii2AuditLogger(
+            storage: $deps['storage'],
+            contextProvider: $deps['contextProvider'],
+            resolveExpressions: false,
+        );
+
+        $expression = new Expression('NOW()');
+        $items = [
+            [
+                'entityClass' => 'App\Models\User',
+                'entityId' => 1,
+                'operation' => Operation::Update,
+                'changedAttributes' => ['ts' => ['old' => null, 'new' => $expression]],
+            ],
+        ];
+
+        $auditLoggerMock = $this->createMock(\FaustVik\AuditLog\Core\Services\AuditLogger::class);
+        // Items passed as-is without resolving
+        $auditLoggerMock
+            ->expects($this->once())
+            ->method('logBatch')
+            ->with($items);
+
+        $this->setPrivateProperty($logger, 'auditLogger', $auditLoggerMock);
+
+        $logger->logBatch($items);
+    }
 }

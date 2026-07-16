@@ -180,6 +180,34 @@ final class Yii2AuditLogger implements AuditLoggerInterface
     }
 
     /**
+     * @param array<int, array{
+     *     entityClass: string,
+     *     entityId: int|string,
+     *     operation: Operation,
+     *     changedAttributes?: array<string, array<string, mixed>>,
+     *     customData?: array<string, mixed>,
+     * }> $items
+     */
+    public function logBatch(array $items): void
+    {
+        if ($this->resolveExpressions) {
+            $resolver = $this->getResolver();
+
+            foreach ($items as $key => $item) {
+                if (isset($item['changedAttributes']) && $item['changedAttributes'] !== []) {
+                    $items[$key]['changedAttributes'] = $this->resolveExpressionsInChanges($item['changedAttributes']);
+                }
+
+                if (isset($item['customData']) && $item['customData'] !== []) {
+                    $items[$key]['customData'] = array_map([$resolver, 'resolve'], $item['customData']);
+                }
+            }
+        }
+
+        $this->getLogger()->logBatch($items);
+    }
+
+    /**
      * @param array<string, mixed> $oldAttributes
      * @param array<string, mixed> $newAttributes
      * @param array<int, string> $excludeAttributes

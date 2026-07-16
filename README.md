@@ -5,7 +5,8 @@ Audit logging package for Yii2 applications with framework-agnostic core.
 ## Features
 
 - **Automatic logging** - INSERT, UPDATE, DELETE operations via Behavior
-- **Events** - Before/After log events for customization
+- **Batch logging** - Atomic multi-record saves with `logBatch()` — all or nothing
+- **Events** - Before/After log events for customization (including batch events)
 - **Query builder** - Advanced filtering with AuditLogQuery
 - **Ready-to-use widgets** - Display change history with filters
 - **Framework-agnostic core** - Can be used with any PHP framework
@@ -102,6 +103,51 @@ Yii::$app->on(
     }
 );
 ```
+
+### Batch Logging
+
+Log multiple operations atomically — either all records are saved or none (transaction is rolled back on failure).
+
+```php
+/** @var \FaustVik\AuditLog\Core\Contracts\AuditLoggerInterface $logger */
+
+$logger->logBatch([
+    [
+        'entityClass' => User::class,
+        'entityId'    => 1,
+        'operation'   => \FaustVik\AuditLog\Core\Enums\Operation::Update,
+        'changedAttributes' => [
+            'status' => ['old' => 'active', 'new' => 'banned'],
+        ],
+        'customData' => ['reason' => 'policy violation'],
+    ],
+    [
+        'entityClass' => UserProfile::class,
+        'entityId'    => 1,
+        'operation'   => \FaustVik\AuditLog\Core\Enums\Operation::Update,
+    ],
+]);
+```
+
+**Cancelling a batch via event:**
+
+```php
+Yii::$app->on(
+    \FaustVik\AuditLog\Core\Events\BeforeLogBatchEvent::class,
+    function (\FaustVik\AuditLog\Core\Events\BeforeLogBatchEvent $event) {
+        // Stop the entire batch
+        $event->stopPropagation();
+
+        // Or filter items — remove sensitive entities
+        $event->items = array_values(array_filter(
+            $event->items,
+            fn ($item) => $item['entityClass'] !== SensitiveModel::class,
+        ));
+    }
+);
+```
+
+**Atomicity:** `logBatch()` wraps all inserts in a single database transaction. If any insert fails, the transaction is rolled back and no records are saved. The error is then handled according to the configured `AuditErrorMode` (`Ignore` / `Log` / `Throw`).
 
 ### Query Logs
 

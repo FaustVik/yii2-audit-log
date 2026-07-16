@@ -58,6 +58,39 @@ final class Yii2DatabaseStorage implements AuditStorageInterface
         }
     }
 
+    public function saveBatch(array $entries): void
+    {
+        if ($entries === []) {
+            return;
+        }
+
+        $db = \Yii::$app->db;
+        $transaction = $db->beginTransaction();
+
+        try {
+            foreach ($entries as $entry) {
+                $logTableName = $this->getLogTableName($entry->entityClass);
+
+                $data = $entry->toArray();
+                $data['changed_attributes'] = new JsonExpression($data['changed_attributes']);
+                $data['custom_data'] = new JsonExpression($data['custom_data']);
+                $data = array_filter($data, static fn ($value): bool => $value !== null);
+
+                $db->createCommand()->insert($logTableName, $data)->execute();
+            }
+
+            $transaction->commit();
+        } catch (\Throwable $e) {
+            $transaction->rollBack();
+
+            throw new StorageException(
+                message: 'Failed to save audit log batch: ' . $e->getMessage(),
+                code: (int) $e->getCode(),
+                previous: $e,
+            );
+        }
+    }
+
     /**
      * @return array<int, LogEntry>
      * @deprecated Use getWithFilters() instead

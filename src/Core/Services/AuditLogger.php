@@ -11,7 +11,9 @@ use FaustVik\AuditLog\Core\Contracts\EventDispatcherInterface;
 use FaustVik\AuditLog\Core\DTO\LogEntry;
 use FaustVik\AuditLog\Core\Enums\AuditErrorMode;
 use FaustVik\AuditLog\Core\Enums\Operation;
+use FaustVik\AuditLog\Core\Events\AfterLogBatchEvent;
 use FaustVik\AuditLog\Core\Events\AfterLogEvent;
+use FaustVik\AuditLog\Core\Events\BeforeLogBatchEvent;
 use FaustVik\AuditLog\Core\Events\BeforeLogEvent;
 use FaustVik\AuditLog\Core\Exceptions\AuditLogException;
 use Psr\Log\LoggerInterface;
@@ -30,6 +32,16 @@ class AuditLogger implements AuditLoggerInterface
      * Event name AFTER logging
      */
     public const EVENT_AFTER_LOG = 'auditLog.afterLog';
+
+    /**
+     * Event name BEFORE batch logging
+     */
+    public const EVENT_BEFORE_LOG_BATCH = 'auditLog.beforeLogBatch';
+
+    /**
+     * Event name AFTER batch logging
+     */
+    public const EVENT_AFTER_LOG_BATCH = 'auditLog.afterLogBatch';
 
     /**
      * @param array<int, string> $systemExcludeAttributes System attributes to exclude
@@ -112,6 +124,70 @@ class AuditLogger implements AuditLoggerInterface
             operation: $operation,
             logEntry: $logEntry,
         ));
+    }
+
+    /**
+     * @param array<int, array{
+     *     entityClass: string,
+     *     entityId: int|string,
+     *     operation: Operation,
+     *     changedAttributes?: array<string, array<string, mixed>>,
+     *     customData?: array<string, mixed>,
+     * }> $items
+     */
+    public function logBatch(array $items): void
+    {
+        if ($items === []) {
+            return;
+        }
+
+        $items = array_values(array_filter(
+            $items,
+            fn (array $item): bool => $this->isEnabledForEntity($item['entityClass']),
+        ));
+
+        if ($items === []) {
+            return;
+        }
+
+        $event = new BeforeLogBatchEvent(items: $items);
+        $this->dispatchEvent($event);
+
+        if ($event->isPropagationStopped()) {
+            return;
+        }
+
+        $items = $event->items;
+
+        $contextInfo = $this->contextProvider->getInfo();
+
+        $entries = array_map(
+            fn (array $item): LogEntry => new LogEntry(
+                entityClass: $item['entityClass'],
+                entityId: $item['entityId'],
+                operation: $item['operation'],
+                userId: $contextInfo->userId,
+                userType: $contextInfo->userType,
+                route: $contextInfo->route,
+                module: $contextInfo->module,
+                ipAddress: $contextInfo->ipAddress,
+                userAgent: $contextInfo->userAgent,
+                createdAt: null,
+                changedAttributes: $item['changedAttributes'] ?? [],
+                customData: $item['customData'] ?? [],
+            ),
+            $items,
+        );
+
+        try {
+            $this->storage->saveBatch($entries);
+        } catch (\Throwable $e) {
+            $this->handleError($e, 'saving audit log batch');
+
+            return;
+        }
+
+        $this->dispatchEvent(new AfterLogBatchEvent(entries: $entries));
     }
 
     /**

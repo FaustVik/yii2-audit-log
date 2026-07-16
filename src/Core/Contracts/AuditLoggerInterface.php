@@ -43,6 +43,23 @@ interface AuditLoggerInterface
     ): array;
 
     /**
+     * Log multiple entity operations atomically.
+     *
+     * Dispatches a single BeforeLogBatchEvent — mutate $event->items to modify the batch,
+     * call $event->stopPropagation() to cancel it entirely.
+     * On success, dispatches AfterLogBatchEvent. On failure, honours the configured errorMode.
+     *
+     * @param array<int, array{
+     *     entityClass: string,
+     *     entityId: int|string,
+     *     operation: Operation,
+     *     changedAttributes?: array<string, array<string, mixed>>,
+     *     customData?: array<string, mixed>,
+     * }> $items
+     */
+    public function logBatch(array $items): void;
+
+    /**
      * Check if logging is enabled for an entity
      *
      * @param string $entityClass Entity class (FQCN)
