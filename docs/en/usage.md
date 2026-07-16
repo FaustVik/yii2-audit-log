@@ -29,9 +29,9 @@ class User extends ActiveRecord
 ```php
 // In view file
 <?= \FaustVik\AuditLog\Yii2\Integration\AuditLogWidget::widget([
-    'model' => $user,
-    'limit' => 50,
-    'title' => 'Change History',
+    'model'    => $user,
+    'pageSize' => 20,
+    'title'    => 'Change History',
 ]) ?>
 ```
 
@@ -39,72 +39,164 @@ class User extends ActiveRecord
 
 ```php
 <?= \FaustVik\AuditLog\Yii2\Integration\AuditLogFilterWidget::widget([
-    'model' => $user,
-    'limit' => 50,
-    'title' => 'Change History',
-    'filters' => [
+    'model'    => $user,
+    'pageSize' => 20,
+    'title'    => 'Change History',
+    'filters'  => [
         'operation' => \FaustVik\AuditLog\Core\Enums\Operation::Update,
-        'dateFrom' => '2025-01-01',
-        'userId' => 5,
+        'dateFrom'  => '2025-01-01',
+        'userId'    => 5,
     ],
-    'showFilters' => true,
 ]) ?>
 ```
+
+---
 
 ## Behavior Options
 
 ```php
 [
     'class' => AuditLogBehavior::class,
-    
+
     // Attributes to exclude from logging
-    'excludeAttributes' => [
-        'hash_password',
-        'auth_key',
-        'updated_at',
-    ],
-    
-    // Custom fields to log
+    'excludeAttributes' => ['hash_password', 'auth_key', 'updated_at'],
+
+    // Custom fields to attach to every log entry
     'customFields' => [
         'ip_address' => fn() => Yii::$app->request->userIP,
-        'custom_field' => fn() => $this->getCustomValue(),
+        'source'     => fn() => $this->getCustomValue(),
     ],
-    
-    // Enable/disable logging for specific operations
+
+    // Toggle logging per operation
     'logInsert' => true,
     'logUpdate' => true,
     'logDelete' => true,
 
-    // Custom error handler (optional, takes priority over logger's errorMode)
+    // Custom error handler (takes priority over the logger's errorMode)
     'errorHandler' => function (\Throwable $e, string $context): void {
-        // $context describes where the error occurred
-        // e.g. "custom field 'request_id'"
         \Sentry\captureException($e);
     },
 ]
 ```
 
-## Error Handling in Behavior
+### Error Handling in Behavior
 
-By default, errors in `customFields` are handled according to the logger's `errorMode` configuration. You can override this behavior per-model using `errorHandler`:
+By default, errors in `customFields` are handled by the logger's `errorMode`. Override it per-model with `errorHandler`:
 
 ```php
-'auditLog' => [
-    'class' => AuditLogBehavior::class,
-    'errorHandler' => function (\Throwable $e, string $context): void {
-        Yii::warning("Audit log error in {$context}: " . $e->getMessage());
-    },
-],
+'errorHandler' => function (\Throwable $e, string $context): void {
+    Yii::warning("Audit log error in {$context}: " . $e->getMessage());
+},
 ```
 
-This is useful when:
-- You want to send errors to Sentry/Rollbar for specific models
-- You need different error handling for different models
-- You want to log errors to a separate file
+---
+
+## Widget Options
+
+Both `AuditLogWidget` and `AuditLogFilterWidget` share these properties:
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `model` | `ActiveRecord` | — | The model whose history to display |
+| `pageSize` | `int` | `0` | Records per page; `0` disables pagination |
+| `pageName` | `string` | `'page'` | GET parameter name for the current page |
+| `limit` | `int` | `0` | Max records when pagination is disabled (`0` = all) |
+| `title` | `string` | `'Change History'` | Widget heading |
+| `displayMode` | `DisplayMode` | `Text` | `Text`, `Accordion`, or `Modal` |
+| `cssClasses` | `array` | AdminLTE defaults | CSS class overrides |
+
+### Pagination
+
+Enable pagination by setting `pageSize > 0`. The widget fetches only the current page from the database and renders navigation automatically:
+
+```php
+<?= AuditLogWidget::widget([
+    'model'    => $user,
+    'pageSize' => 25,         // 25 records per page
+    'pageName' => 'auditPage', // use a custom GET param to avoid conflicts
+]) ?>
+```
+
+URL example: `/admin/user/view?id=5&auditPage=3`
+
+When pagination is active, the footer shows **"Showing 51–75 of 142"**. Without pagination it shows **"Total records: 142"**.
+
+When used with `AuditLogFilterWidget`, submitting the filter form always resets to page 1 (the page parameter is not preserved as a hidden field).
+
+### Display Modes
+
+```php
+// Text mode (default) — data rendered directly in the table cells
+'displayMode' => \FaustVik\AuditLog\Core\Enums\DisplayMode::Text,
+
+// Accordion mode — expandable rows below each record
+'displayMode' => \FaustVik\AuditLog\Core\Enums\DisplayMode::Accordion,
+
+// Modal mode — "View" buttons open a modal window
+'displayMode' => \FaustVik\AuditLog\Core\Enums\DisplayMode::Modal,
+```
+
+---
+
+## Filter Options
+
+`AuditLogFilterWidget` reads filters from GET parameters and also accepts defaults via the `filters` property:
+
+| Filter | GET param | Description |
+|--------|-----------|-------------|
+| `operation` | `operation` | `INSERT`, `UPDATE`, or `DELETE` |
+| `dateFrom` | `dateFrom` | Date from (`YYYY-MM-DD`) |
+| `dateTo` | `dateTo` | Date to (`YYYY-MM-DD`) |
+| `userId` | `userId` | User ID |
+| `userType` | `userType` | User type |
+
+### Preserving URL Parameters
+
+By default, existing query parameters (e.g., `?id=5&tab=history`) are kept when submitting the filter form. The page parameter is always excluded so filtering resets to page 1.
+
+```php
+'preserveQueryParams' => true,  // default
+```
+
+---
+
+## Batch Logging
+
+Use `logBatch()` to atomically log multiple operations in a single database transaction — either all records are saved or none:
+
+```php
+/** @var \FaustVik\AuditLog\Core\Contracts\AuditLoggerInterface $logger */
+
+$logger->logBatch([
+    [
+        'entityClass'       => User::class,
+        'entityId'          => 1,
+        'operation'         => \FaustVik\AuditLog\Core\Enums\Operation::Update,
+        'changedAttributes' => ['status' => ['old' => 'active', 'new' => 'banned']],
+        'customData'        => ['reason' => 'policy violation'],
+    ],
+    [
+        'entityClass' => UserProfile::class,
+        'entityId'    => 1,
+        'operation'   => \FaustVik\AuditLog\Core\Enums\Operation::Update,
+    ],
+]);
+```
+
+Each item supports:
+- `entityClass` *(required)* — FQCN of the entity
+- `entityId` *(required)* — primary key
+- `operation` *(required)* — `Operation` enum value
+- `changedAttributes` *(optional)* — `['attr' => ['old' => ..., 'new' => ...]]`
+- `customData` *(optional)* — arbitrary key-value data
+
+See [Events](events.md) for `BeforeLogBatchEvent` / `AfterLogBatchEvent` usage.
+
+---
 
 ## Query Logs
 
-Use `AuditLogQuery` for advanced filtering:
+Use `AuditLogQuery` for programmatic access:
 
 ```php
 use FaustVik\AuditLog\Core\Query\AuditLogQuery;
@@ -112,7 +204,7 @@ use FaustVik\AuditLog\Core\Contracts\AuditStorageInterface;
 
 $storage = Yii::createObject(AuditStorageInterface::class);
 
-// Get logs for entity
+// Basic
 $logs = (new AuditLogQuery($storage))
     ->forEntity(User::class, $userId)
     ->limit(50)
@@ -120,102 +212,71 @@ $logs = (new AuditLogQuery($storage))
     ->all();
 
 // Filter by operation
-$updateLogs = (new AuditLogQuery($storage))
+$updates = (new AuditLogQuery($storage))
     ->forEntity(User::class, $userId)
     ->operation(\FaustVik\AuditLog\Core\Enums\Operation::Update)
     ->all();
 
-// Filter by date range
-$recentLogs = (new AuditLogQuery($storage))
+// Date range
+$recent = (new AuditLogQuery($storage))
     ->forEntity(User::class, $userId)
     ->dateRange('2025-01-01', '2025-12-31')
     ->all();
 
-// Filter by user
+// By user
 $adminLogs = (new AuditLogQuery($storage))
     ->forEntity(User::class, $userId)
     ->userId(5)
     ->userType('admin')
     ->all();
+
+// Count without fetching rows
+$total = (new AuditLogQuery($storage))
+    ->forEntity(User::class, $userId)
+    ->count();
+
+// Manual pagination
+$page     = 3;
+$pageSize = 20;
+$logs = (new AuditLogQuery($storage))
+    ->forEntity(User::class, $userId)
+    ->limit($pageSize)
+    ->offset(($page - 1) * $pageSize)
+    ->all();
 ```
 
-## Display Modes
-
-```php
-// Text mode (default) - data displayed directly in table
-'displayMode' => \FaustVik\AuditLog\Core\Enums\DisplayMode::Text,
-
-// Accordion mode - expandable rows
-'displayMode' => \FaustVik\AuditLog\Core\Enums\DisplayMode::Accordion,
-
-// Modal mode - modal windows for details
-'displayMode' => \FaustVik\AuditLog\Core\Enums\DisplayMode::Modal,
-```
-
-## Filter Options
-
-`AuditLogFilterWidget` supports the following filters:
-
-- `operation` - Filter by operation type (Insert, Update, Delete)
-- `dateFrom` - Date from (YYYY-MM-DD)
-- `dateTo` - Date to (YYYY-MM-DD)
-- `userId` - Filter by user ID
-- `userType` - Filter by user type
-
-### Preserving URL Parameters
-
-By default, the widget preserves all current URL parameters when filtering:
-
-```php
-// URL: /admin/user/view?id=5&tab=history
-// After filter: /admin/user/view?id=5&tab=history&operation=UPDATE
-
-<?= AuditLogFilterWidget::widget([
-    'model' => $user,
-    'preserveQueryParams' => true, // Default is true
-]) ?>
-```
-
-Disable if needed:
-
-```php
-'preserveQueryParams' => false,
-```
+---
 
 ## Log Entry Structure
 
-Each log entry is represented by the `LogEntry` DTO:
+Each log entry is a `LogEntry` DTO:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `entityClass` | `string` | Entity class FQCN (e.g., `app\models\User`) |
-| `entityId` | `int\|string` | Entity primary key |
-| `operation` | `Operation` | Operation type: `Insert`, `Update`, `Delete` |
-| `userId` | `int\|string\|null` | User who performed the operation |
-| `userType` | `string` | User type: admin, user, api, console, system |
-| `route` | `string\|null` | Route where operation occurred |
-| `module` | `string\|null` | Module where operation occurred |
+| `entityClass` | `string` | FQCN (e.g. `app\models\User`) |
+| `entityId` | `int\|string` | Primary key |
+| `operation` | `Operation` | `Insert`, `Update`, `Delete` |
+| `userId` | `int\|string\|null` | Who performed the operation |
+| `userType` | `string` | `admin`, `user`, `api`, `console`, `system` |
+| `route` | `string\|null` | Route at the time of the operation |
+| `module` | `string\|null` | Module at the time of the operation |
 | `ipAddress` | `string\|null` | Client IP address |
 | `userAgent` | `string\|null` | Browser User-Agent |
-| `createdAt` | `string\|null` | Timestamp (YYYY-MM-DD HH:MM:SS) |
-| `changedAttributes` | `array` | Changed attributes with old/new values |
-| `customData` | `array` | Additional custom data |
-
-### Accessing Log Data
+| `createdAt` | `string\|null` | `YYYY-MM-DD HH:MM:SS` |
+| `changedAttributes` | `array` | `['attr' => ['old' => ..., 'new' => ...]]` |
+| `customData` | `array` | Arbitrary extra data |
 
 ```php
-$logs = (new AuditLogQuery($storage))
-    ->forEntity(User::class, $userId)
-    ->all();
-
 foreach ($logs as $log) {
-    echo "Operation: " . $log->operation->value;
-    echo "User: " . ($log->userId ?? 'system');
-    echo "Changes: " . json_encode($log->changedAttributes);
+    echo $log->operation->value;           // "UPDATE"
+    echo $log->userId ?? 'system';
+    echo json_encode($log->changedAttributes);
 }
 ```
 
+---
+
 ## Next Steps
 
-- [Events](events.md) - Using events for customization
-- [Exceptions](exceptions.md) - Exception types and handling
+- [Events](events.md) — Customise behaviour with before/after events (including batch)
+- [Exceptions](exceptions.md) — Exception types and error handling

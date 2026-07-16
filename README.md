@@ -48,9 +48,9 @@ class User extends ActiveRecord
 
 ```php
 <?= \FaustVik\AuditLog\Yii2\Integration\AuditLogFilterWidget::widget([
-    'model' => $user,
-    'limit' => 50,
-    'title' => 'Change History',
+    'model'    => $user,
+    'pageSize' => 20,
+    'title'    => 'Change History',
 ]) ?>
 ```
 
@@ -76,7 +76,7 @@ src/
 │   ├── Contracts/           # Interfaces
 │   ├── DTO/                 # Data Transfer Objects
 │   ├── Enums/               # Enumerations
-│   ├── Events/              # BeforeLogEvent, AfterLogEvent
+│   ├── Events/              # BeforeLogEvent, AfterLogEvent, BeforeLogBatchEvent, AfterLogBatchEvent
 │   ├── Exceptions/          # Exceptions
 │   ├── Query/               # AuditLogQuery
 │   └── Services/            # AuditLogger

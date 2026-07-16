@@ -34,7 +34,17 @@ class AuditLogWidget extends Widget
     public ActiveRecord $model;
 
     /**
-     * @var int<0, max> Number of records to display (0 = all)
+     * @var int<0, max> Records per page when pagination is enabled (0 = disabled)
+     */
+    public int $pageSize = 0;
+
+    /**
+     * @var string GET parameter name for the current page number
+     */
+    public string $pageName = 'page';
+
+    /**
+     * @var int<0, max> Total records limit when pagination is disabled (0 = all)
      */
     public int $limit = 0;
 
@@ -84,7 +94,27 @@ class AuditLogWidget extends Widget
 
     public function run(): string
     {
-        $logs = $this->fetchLogs();
+        $pagination = null;
+
+        if ($this->pageSize > 0) {
+            $currentPage = max(1, (int) \Yii::$app->request->get($this->pageName, 1));
+            $totalCount = $this->fetchTotalCount();
+            $pageCount = $totalCount > 0 ? (int) ceil($totalCount / $this->pageSize) : 1;
+            $currentPage = min($currentPage, $pageCount);
+            $offset = max(0, ($currentPage - 1) * $this->pageSize);
+
+            $logs = $this->fetchLogs($this->pageSize, $offset);
+
+            $pagination = [
+                'currentPage' => $currentPage,
+                'pageSize' => $this->pageSize,
+                'totalCount' => $totalCount,
+                'pageCount' => $pageCount,
+                'pageName' => $this->pageName,
+            ];
+        } else {
+            $logs = $this->fetchLogs($this->limit, 0);
+        }
 
         return $this->renderFile($this->getWidgetViewPath(), [
             'logs' => $logs,
@@ -92,6 +122,7 @@ class AuditLogWidget extends Widget
             'cssClasses' => $this->cssClasses,
             'displayMode' => $this->displayMode,
             'jsonFlags' => $this->jsonFlags,
+            'pagination' => $pagination,
         ]);
     }
 
@@ -100,25 +131,42 @@ class AuditLogWidget extends Widget
      *
      * @return array<int, LogEntry>
      */
-    protected function fetchLogs(): array
+    /**
+     * @param int<0, max> $limit
+     * @param int<0, max> $offset
+     * @return array<int, LogEntry>
+     */
+    protected function fetchLogs(int $limit = 0, int $offset = 0): array
     {
-        $storage = $this->getStorage();
         $entityId = $this->model->getPrimaryKey();
 
-        if ($entityId === null) {
+        if ($entityId === null || (!is_int($entityId) && !is_string($entityId))) {
             return [];
         }
 
-        if (!is_int($entityId) && !is_string($entityId)) {
-            return [];
-        }
-
-        $query = (new AuditLogQuery($storage))
+        $query = (new AuditLogQuery($this->getStorage()))
             ->forEntity($this->model::class, $entityId)
-            ->limit($this->limit)
+            ->limit($limit)
+            ->offset($offset)
             ->orderBy('created_at DESC');
 
         return $query->all();
+    }
+
+    /**
+     * Get total record count for the current model (without limit/offset).
+     */
+    protected function fetchTotalCount(): int
+    {
+        $entityId = $this->model->getPrimaryKey();
+
+        if ($entityId === null || (!is_int($entityId) && !is_string($entityId))) {
+            return 0;
+        }
+
+        return (new AuditLogQuery($this->getStorage()))
+            ->forEntity($this->model::class, $entityId)
+            ->count();
     }
 
     protected function getStorage(): AuditStorageInterface

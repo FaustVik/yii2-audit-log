@@ -62,7 +62,27 @@ class AuditLogFilterWidget extends AuditLogWidget
 
     public function run(): string
     {
-        $logs = $this->fetchLogs();
+        $pagination = null;
+
+        if ($this->pageSize > 0) {
+            $currentPage = max(1, (int) \Yii::$app->request->get($this->pageName, 1));
+            $totalCount = $this->fetchTotalCount();
+            $pageCount = $totalCount > 0 ? (int) ceil($totalCount / $this->pageSize) : 1;
+            $currentPage = min($currentPage, $pageCount);
+            $offset = max(0, ($currentPage - 1) * $this->pageSize);
+
+            $logs = $this->fetchLogs($this->pageSize, $offset);
+
+            $pagination = [
+                'currentPage' => $currentPage,
+                'pageSize' => $this->pageSize,
+                'totalCount' => $totalCount,
+                'pageCount' => $pageCount,
+                'pageName' => $this->pageName,
+            ];
+        } else {
+            $logs = $this->fetchLogs($this->limit, 0);
+        }
 
         return $this->renderFile($this->getWidgetViewPath(), [
             'logs' => $logs,
@@ -74,6 +94,8 @@ class AuditLogFilterWidget extends AuditLogWidget
             'resetUrl' => $this->buildResetUrl(),
             'preserveQueryParams' => $this->preserveQueryParams,
             'filterParams' => $this->filterParams,
+            'pageName' => $this->pageName,
+            'pagination' => $pagination,
         ]);
     }
 
@@ -83,21 +105,41 @@ class AuditLogFilterWidget extends AuditLogWidget
     }
 
     /**
-     * Get log entries for a model considering GET parameters
-     *
+     * @param int<0, max> $limit
+     * @param int<0, max> $offset
      * @return array<int, \FaustVik\AuditLog\Core\DTO\LogEntry>
      */
-    protected function fetchLogs(): array
+    protected function fetchLogs(int $limit = 0, int $offset = 0): array
     {
-        $storage = $this->getStorage();
-        $entityId = $this->model->getPrimaryKey();
+        $query = $this->buildQuery();
 
-        if ($entityId === null) {
+        if ($query === null) {
             return [];
         }
 
-        if (!is_int($entityId) && !is_string($entityId)) {
-            return [];
+        return $query->limit($limit)->offset($offset)->all();
+    }
+
+    protected function fetchTotalCount(): int
+    {
+        $query = $this->buildQuery();
+
+        if ($query === null) {
+            return 0;
+        }
+
+        return $query->count();
+    }
+
+    /**
+     * Build a query with all active filters applied but without limit/offset.
+     */
+    private function buildQuery(): ?AuditLogQuery
+    {
+        $entityId = $this->model->getPrimaryKey();
+
+        if ($entityId === null || (!is_int($entityId) && !is_string($entityId))) {
+            return null;
         }
 
         $filters = $this->filters;
@@ -122,33 +164,37 @@ class AuditLogFilterWidget extends AuditLogWidget
         if ($userId !== null && $userId !== '') {
             $filters[FilterParam::UserId->value] = $userId;
         }
+
         $userType = $request->get(FilterParam::UserType->value);
         if ($userType !== null && $userType !== '') {
             $filters[FilterParam::UserType->value] = $userType;
         }
 
-        $query = (new AuditLogQuery($storage))
+        $query = (new AuditLogQuery($this->getStorage()))
             ->forEntity($this->model::class, $entityId)
-            ->limit($this->limit);
+            ->orderBy('created_at DESC');
 
-        if (isset($filters[FilterParam::Operation->value]) && $filters[FilterParam::Operation->value]) {
-            $query->operation($filters[FilterParam::Operation->value]);
+        $op = $filters[FilterParam::Operation->value] ?? null;
+        if ($op instanceof Operation) {
+            $query->operation($op);
         }
 
-        $dateFrom = $filters[FilterParam::DateFrom->value] ?? null;
-        $dateTo = $filters[FilterParam::DateTo->value] ?? null;
+        $dateFrom = is_string($filters[FilterParam::DateFrom->value] ?? null) ? $filters[FilterParam::DateFrom->value] : null;
+        $dateTo = is_string($filters[FilterParam::DateTo->value] ?? null) ? $filters[FilterParam::DateTo->value] : null;
 
         if ($dateFrom !== null || $dateTo !== null) {
             $query->dateRange($dateFrom, $dateTo);
         }
+
         if (isset($filters[FilterParam::UserId->value])) {
             $query->userId($filters[FilterParam::UserId->value]);
         }
+
         if (isset($filters[FilterParam::UserType->value])) {
             $query->userType($filters[FilterParam::UserType->value]);
         }
 
-        return $query->all();
+        return $query;
     }
 
     /**
