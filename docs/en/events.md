@@ -1,182 +1,157 @@
 # Events
 
-The package supports events for customizing logging behavior.
+The package dispatches events before and after each log operation so you can inspect, modify, or cancel logging without touching the core service.
 
-## Available Events
+## Single-record events
 
 ### BeforeLogEvent
 
-Triggered BEFORE logging an operation. Allows you to:
-- Modify data before logging
-- Cancel logging entirely
+Triggered **before** a single operation is saved. You can modify data or cancel logging.
 
 ```php
 use FaustVik\AuditLog\Core\Events\BeforeLogEvent;
 use FaustVik\AuditLog\Core\Enums\Operation;
-use app\models\User;
 
-// In bootstrap.php or config
+// In bootstrap.php
 Yii::$app->on(BeforeLogEvent::class, function (BeforeLogEvent $event) {
-    // Cancel logging for user deletion
+    // Cancel logging
     if ($event->entityClass === User::class && $event->operation === Operation::Delete) {
-        $event->stopPropagation(); // Cancel logging
+        $event->stopPropagation();
+        return;
     }
-    
-    // Hide sensitive data
+
+    // Redact sensitive fields (direct property access)
     if (isset($event->changedAttributes['password_hash'])) {
-        $event->changedAttributes['password_hash'] = [
-            'old' => '[REDACTED]',
-            'new' => '[REDACTED]',
-        ];
+        $event->changedAttributes['password_hash'] = ['old' => '[REDACTED]', 'new' => '[REDACTED]'];
     }
-    
-    // Add custom data
-    $event->addCustomData('server', gethostname());
+
+    // Attach extra data
+    $event->customData['server'] = gethostname();
 });
+```
+
+**Read-only properties:** `entityClass`, `entityId`, `operation`
+
+**Mutable properties:** `changedAttributes`, `customData`
+
+**Methods:**
+```php
+$event->stopPropagation();      // cancel logging
+$event->isPropagationStopped(); // check status
 ```
 
 ### AfterLogEvent
 
-Triggered AFTER logging an operation. Read-only access to log data.
+Triggered **after** a record has been successfully saved. All properties are read-only.
 
 ```php
 use FaustVik\AuditLog\Core\Events\AfterLogEvent;
 use FaustVik\AuditLog\Core\Enums\Operation;
 
 Yii::$app->on(AfterLogEvent::class, function (AfterLogEvent $event) {
-    // Log deletions
     if ($event->operation === Operation::Delete) {
-        Yii::info("Record deleted: {$event->entityClass} #{$event->entityId}");
-    }
-    
-    // Send notification for important changes
-    if ($event->entityClass === User::class && $event->operation === Operation::Update) {
-        // Send email, push notification, etc.
+        Yii::info("Deleted: {$event->entityClass} #{$event->entityId}");
     }
 });
 ```
 
-## Event Methods
+**Properties:** `entityClass`, `entityId`, `operation`, `logEntry`
 
-### BeforeLogEvent
+> `AfterLogEvent` is **not** dispatched if the storage layer throws an exception.
 
-```php
-// Stop propagation (cancel logging)
-$event->stopPropagation();
+---
 
-// Check if propagation is stopped
-$event->isPropagationStopped();
+## Batch events
 
-// Set changed attributes
-$event->setChangedAttributes([...]);
+Use `logBatch()` to save multiple records in a single transaction. Two events wrap the batch.
 
-// Add a changed attribute
-$event->addChangedAttribute('attribute', ['old' => 'old_value', 'new' => 'new_value']);
+### BeforeLogBatchEvent
 
-// Remove a changed attribute
-$event->removeChangedAttribute('attribute');
-
-// Set custom data
-$event->setCustomData(['key' => 'value']);
-
-// Add custom data
-$event->addCustomData('key', 'value');
-
-// Remove custom data
-$event->removeCustomData('key');
-```
-
-### AfterLogEvent
-
-Read-only properties:
+Triggered once **before** the entire batch is saved. Mutate `$event->items` to filter or alter the batch; call `stopPropagation()` to cancel it entirely.
 
 ```php
-$event->entityClass      // Entity class (FQCN)
-$event->entityId         // Entity ID
-$event->operation        // Operation type (Operation enum)
-$event->logEntry         // LogEntry object
-```
+use FaustVik\AuditLog\Core\Events\BeforeLogBatchEvent;
 
-## Use Cases
-
-### 1. Conditional Logging
-
-```php
-Yii::$app->on(BeforeLogEvent::class, function (BeforeLogEvent $event) {
-    // Only log important changes
-    if (count($event->changedAttributes) < 2) {
+Yii::$app->on(BeforeLogBatchEvent::class, function (BeforeLogBatchEvent $event) {
+    // Cancel the whole batch
+    if (someCondition()) {
         $event->stopPropagation();
+        return;
+    }
+
+    // Filter out sensitive entities
+    $event->items = array_values(array_filter(
+        $event->items,
+        fn ($item) => $item['entityClass'] !== SensitiveModel::class,
+    ));
+});
+```
+
+**Mutable property:** `items` — the full batch array; replace it to change what gets saved.
+
+**Methods:**
+```php
+$event->stopPropagation();      // cancel the entire batch
+$event->isPropagationStopped(); // check status
+```
+
+### AfterLogBatchEvent
+
+Triggered once **after** the batch transaction commits successfully. Contains all saved entries.
+
+```php
+use FaustVik\AuditLog\Core\Events\AfterLogBatchEvent;
+
+Yii::$app->on(AfterLogBatchEvent::class, function (AfterLogBatchEvent $event) {
+    foreach ($event->entries as $entry) {
+        // $entry is a LogEntry instance
+        Yii::info("Batch-saved: {$entry->entityClass} #{$entry->entityId}");
     }
 });
 ```
 
-### 2. Audit Trail for Specific Users
+**Property:** `entries` — `LogEntry[]`, read-only.
 
-```php
-Yii::$app->on(BeforeLogEvent::class, function (BeforeLogEvent $event) {
-    // Only log admin actions
-    if (Yii::$app->user->identity && !Yii::$app->user->identity->isAdmin()) {
-        $event->stopPropagation();
-    }
-});
-```
+> `AfterLogBatchEvent` is **not** dispatched if the transaction rolls back.
 
-### 3. External Logging
+---
 
-```php
-Yii::$app->on(AfterLogEvent::class, function (AfterLogEvent $event) {
-    // Send to external logging service
-    $externalLogger->log([
-        'entity' => $event->entityClass,
-        'id' => $event->entityId,
-        'operation' => $event->operation->value,
-        'timestamp' => date('Y-m-d H:i:s'),
-    ]);
-});
-```
+## Atomicity of logBatch()
 
-## PSR-14 Compatibility
+`logBatch()` wraps all inserts in a single database transaction:
 
-This package uses a simple event dispatcher interface. If you want to use a PSR-14 compatible event dispatcher (e.g., Symfony EventDispatcher), create an adapter:
+- **All succeed** → transaction commits → `AfterLogBatchEvent` dispatched.
+- **Any insert fails** → transaction rolls back → no records saved → error handled per `AuditErrorMode`.
+
+There is **no partial save**. Audit correctness is prioritised over resilience to individual failures.
+
+---
+
+## PSR-14 compatibility
+
+The package ships a minimal `EventDispatcherInterface`. To plug in a PSR-14 dispatcher (e.g., Symfony's), write an adapter:
 
 ```php
 use FaustVik\AuditLog\Core\Contracts\EventDispatcherInterface;
-use Psr\EventDispatcher\EventDispatcherInterface as PsrEventDispatcherInterface;
+use Psr\EventDispatcher\EventDispatcherInterface as PsrDispatcher;
 
-class PsrEventDispatcherAdapter implements EventDispatcherInterface
+final class PsrAdapter implements EventDispatcherInterface
 {
-    public function __construct(
-        private PsrEventDispatcherInterface $psrDispatcher
-    ) {}
+    public function __construct(private PsrDispatcher $inner) {}
 
     public function dispatch(object $event): void
     {
-        $this->psrDispatcher->dispatch($event);
+        $this->inner->dispatch($event);
     }
 
     public function hasListeners(string $eventName): bool
     {
-        // PSR-14 doesn't have this method, implement as needed
-        return false;
+        return false; // PSR-14 does not expose this; implement if needed
     }
 }
 ```
 
-Configure in DI container:
-
-```php
-'container' => [
-    'singletons' => [
-        // Your PSR-14 dispatcher (e.g., Symfony)
-        PsrEventDispatcherInterface::class => new SymfonyEventDispatcher(),
-        
-        // Our adapter
-        EventDispatcherInterface::class => new PsrEventDispatcherAdapter(
-            Yii::$container->get(PsrEventDispatcherInterface::class)
-        ),
-    ]
-]
-```
+---
 
 ## Next Steps
 

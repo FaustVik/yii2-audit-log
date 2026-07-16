@@ -3,6 +3,7 @@ vendor/
 var/
 .qwen/
 .mimocode/
+.claude/
 
 composer.lock
 commit-message.txt

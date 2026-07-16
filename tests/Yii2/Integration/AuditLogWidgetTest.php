@@ -135,7 +135,7 @@ final class AuditLogWidgetTest extends TestCase
 
         $reflection = new \ReflectionMethod($widget, 'fetchLogs');
         $reflection->setAccessible(true);
-        $reflection->invoke($widget);
+        $reflection->invoke($widget, $widget->limit, 0);
 
         $this->assertSame(10, $capturedLimit);
     }
@@ -243,5 +243,92 @@ final class AuditLogWidgetTest extends TestCase
 
         $this->assertCount(1, $result);
         $this->assertSame(1, $result[0]->entityId);
+    }
+
+    // ============================================================
+    // Pagination
+    // ============================================================
+
+    #[Test]
+    public function pageSizeDefaultsToZero(): void
+    {
+        $widget = $this->createWidget();
+
+        $this->assertSame(0, $widget->pageSize);
+    }
+
+    #[Test]
+    public function fetchLogsShouldPassLimitAndOffsetToQuery(): void
+    {
+        $storage = $this->createMockStorage([]);
+        $widget = $this->createWidget(['storage' => $storage]);
+
+        $capturedLimit = null;
+        $capturedOffset = null;
+        $storage
+            ->expects($this->once())
+            ->method('getWithFilters')
+            ->willReturnCallback(function (
+                string $entityClass,
+                int|string|null $entityId,
+                ?Operation $operation,
+                int|string|null $userId,
+                ?string $userType,
+                ?string $dateFrom,
+                ?string $dateTo,
+                int $limit,
+                int $offset,
+            ) use (&$capturedLimit, &$capturedOffset) {
+                $capturedLimit = $limit;
+                $capturedOffset = $offset;
+                return [];
+            });
+
+        $reflection = new \ReflectionMethod($widget, 'fetchLogs');
+        $reflection->setAccessible(true);
+        $reflection->invoke($widget, 20, 40);
+
+        $this->assertSame(20, $capturedLimit);
+        $this->assertSame(40, $capturedOffset);
+    }
+
+    #[Test]
+    public function fetchTotalCountShouldCallCountWithFilters(): void
+    {
+        $storage = $this->createMock(AuditStorageInterface::class);
+        $storage
+            ->expects($this->once())
+            ->method('countWithFilters')
+            ->willReturn(55);
+
+        $widget = $this->createWidget(['storage' => $storage]);
+
+        $reflection = new \ReflectionMethod($widget, 'fetchTotalCount');
+        $reflection->setAccessible(true);
+        $result = $reflection->invoke($widget);
+
+        $this->assertSame(55, $result);
+    }
+
+    #[Test]
+    public function fetchTotalCountReturnsZeroForNullPrimaryKey(): void
+    {
+        $model = new StubActiveRecord();
+        $model->setPrimaryKey(null);
+        $model->setAttributes([]);
+        $model->setOldAttributes([]);
+
+        $storage = $this->createMockStorage([]);
+        $storage->expects($this->never())->method('countWithFilters');
+
+        $widget = new AuditLogWidget();
+        $widget->model = $model;
+        $widget->storage = $storage;
+
+        $reflection = new \ReflectionMethod($widget, 'fetchTotalCount');
+        $reflection->setAccessible(true);
+        $result = $reflection->invoke($widget);
+
+        $this->assertSame(0, $result);
     }
 }

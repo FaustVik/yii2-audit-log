@@ -7,18 +7,26 @@ namespace FaustVik\AuditLog\Core\Query;
 use FaustVik\AuditLog\Core\Contracts\AuditStorageInterface;
 use FaustVik\AuditLog\Core\DTO\LogEntry;
 use FaustVik\AuditLog\Core\Enums\Operation;
+use FaustVik\AuditLog\Core\Exceptions\AuditLogException;
 
 /**
  * Query object for filtering and retrieving logs
  *
  * @example
  * ```php
+ * // All updates for User #5
  * $logs = (new AuditLogQuery($storage))
- *     ->forEntity(User::class, 5)
+ *     ->forEntityClass(User::class)
+ *     ->forEntityId(5)
  *     ->operation(Operation::Update)
- *     ->userId(5)
  *     ->dateRange('2025-01-01', '2025-12-31')
  *     ->limit(50)
+ *     ->all();
+ *
+ * // All changes across all User records today
+ * $logs = (new AuditLogQuery($storage))
+ *     ->forEntityClass(User::class)
+ *     ->dateRange(date('Y-m-d'), date('Y-m-d'))
  *     ->all();
  * ```
  */
@@ -80,14 +88,26 @@ final class AuditLogQuery
     }
 
     /**
-     * Filter by entity
+     * Set the entity class to query (required before executing).
      *
      * @param string $entityClass Entity class (FQCN)
-     * @param int|string $entityId Entity ID
      */
-    public function forEntity(string $entityClass, int|string $entityId): self
+    public function forEntityClass(string $entityClass): self
     {
         $this->entityClass = $entityClass;
+
+        return $this;
+    }
+
+    /**
+     * Narrow the query to a specific entity ID (optional).
+     *
+     * Omit to query all records of the entity class.
+     *
+     * @param int|string $entityId Entity ID
+     */
+    public function forEntityId(int|string $entityId): self
+    {
         $this->entityId = $entityId;
 
         return $this;
@@ -132,13 +152,33 @@ final class AuditLogQuery
      *
      * @param string|null $dateFrom Date from (YYYY-MM-DD) or null
      * @param string|null $dateTo Date to (YYYY-MM-DD) or null
+     * @throws \InvalidArgumentException if a non-null date does not match the YYYY-MM-DD format
      */
     public function dateRange(?string $dateFrom = null, ?string $dateTo = null): self
     {
+        if ($dateFrom !== null) {
+            $this->validateDate($dateFrom);
+        }
+
+        if ($dateTo !== null) {
+            $this->validateDate($dateTo);
+        }
+
         $this->dateFrom = $dateFrom;
         $this->dateTo = $dateTo;
 
         return $this;
+    }
+
+    private function validateDate(string $date): void
+    {
+        $parsed = \DateTimeImmutable::createFromFormat('Y-m-d', $date);
+
+        if ($parsed === false || $parsed->format('Y-m-d') !== $date) {
+            throw new \InvalidArgumentException(
+                "Invalid date format '{$date}': expected YYYY-MM-DD.",
+            );
+        }
     }
 
     /**
@@ -180,16 +220,13 @@ final class AuditLogQuery
     /**
      * Get all records matching filters
      *
+     * @throws AuditLogException if forEntityClass() was not called
      * @return array<int, LogEntry>
      */
     public function all(): array
     {
-        if ($this->entityClass === null) {
-            return [];
-        }
-
         return $this->storage->getWithFilters(
-            entityClass: $this->entityClass,
+            entityClass: $this->requireEntityClass(),
             entityId: $this->entityId,
             operation: $this->operation,
             userId: $this->userId,
@@ -204,15 +241,13 @@ final class AuditLogQuery
 
     /**
      * Get first record
+     *
+     * @throws AuditLogException if forEntityClass() was not called
      */
     public function one(): ?LogEntry
     {
-        if ($this->entityClass === null) {
-            return null;
-        }
-
         $results = $this->storage->getWithFilters(
-            entityClass: $this->entityClass,
+            entityClass: $this->requireEntityClass(),
             entityId: $this->entityId,
             operation: $this->operation,
             userId: $this->userId,
@@ -229,15 +264,13 @@ final class AuditLogQuery
 
     /**
      * Get records count
+     *
+     * @throws AuditLogException if forEntityClass() was not called
      */
     public function count(): int
     {
-        if ($this->entityClass === null) {
-            return 0;
-        }
-
         return $this->storage->countWithFilters(
-            entityClass: $this->entityClass,
+            entityClass: $this->requireEntityClass(),
             entityId: $this->entityId,
             operation: $this->operation,
             userId: $this->userId,
@@ -245,5 +278,14 @@ final class AuditLogQuery
             dateFrom: $this->dateFrom,
             dateTo: $this->dateTo,
         );
+    }
+
+    private function requireEntityClass(): string
+    {
+        if ($this->entityClass === null) {
+            throw new AuditLogException('Call forEntityClass() before executing the query.');
+        }
+
+        return $this->entityClass;
     }
 }

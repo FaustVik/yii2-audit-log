@@ -11,7 +11,9 @@ use FaustVik\AuditLog\Core\DTO\ContextInfo;
 use FaustVik\AuditLog\Core\DTO\LogEntry;
 use FaustVik\AuditLog\Core\Enums\AuditErrorMode;
 use FaustVik\AuditLog\Core\Enums\Operation;
+use FaustVik\AuditLog\Core\Events\AfterLogBatchEvent;
 use FaustVik\AuditLog\Core\Events\AfterLogEvent;
+use FaustVik\AuditLog\Core\Events\BeforeLogBatchEvent;
 use FaustVik\AuditLog\Core\Events\BeforeLogEvent;
 use FaustVik\AuditLog\Core\Exceptions\AuditLogException;
 use FaustVik\AuditLog\Core\Services\AuditLogger;
@@ -131,8 +133,12 @@ final class AuditLoggerTest extends TestCase
         $contextProvider
             ->method('getInfo')
             ->willReturn(new ContextInfo(
-                userId: null, userAgent: null, route: null,
-                module: null, ipAddress: null, userType: 'system',
+                userId: null,
+                userAgent: null,
+                route: null,
+                module: null,
+                ipAddress: null,
+                userType: 'system',
             ));
 
         $storage
@@ -156,6 +162,42 @@ final class AuditLoggerTest extends TestCase
     }
 
     #[Test]
+    public function logShouldNotDispatchAfterLogEventWhenSaveFails(): void
+    {
+        $storage = $this->createMock(AuditStorageInterface::class);
+        $contextProvider = $this->createMock(ContextProviderInterface::class);
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+
+        $contextProvider
+            ->method('getInfo')
+            ->willReturn(new ContextInfo(
+                userId: null,
+                userAgent: null,
+                route: null,
+                module: null,
+                ipAddress: null,
+                userType: 'system',
+            ));
+
+        $storage->method('save')->willThrowException(new \RuntimeException('DB error'));
+
+        // Only BeforeLogEvent should be dispatched; AfterLogEvent must not fire
+        $eventDispatcher
+            ->expects($this->once())
+            ->method('dispatch')
+            ->with($this->isInstanceOf(BeforeLogEvent::class));
+
+        $logger = new AuditLogger(
+            storage: $storage,
+            contextProvider: $contextProvider,
+            eventDispatcher: $eventDispatcher,
+            errorMode: AuditErrorMode::Ignore,
+        );
+
+        $logger->log(entityClass: 'App\Models\User', entityId: 1, operation: Operation::Insert);
+    }
+
+    #[Test]
     public function logShouldCallErrorHandlerWithLogMode(): void
     {
         $storage = $this->createMock(AuditStorageInterface::class);
@@ -165,8 +207,12 @@ final class AuditLoggerTest extends TestCase
         $contextProvider
             ->method('getInfo')
             ->willReturn(new ContextInfo(
-                userId: null, userAgent: null, route: null,
-                module: null, ipAddress: null, userType: 'system',
+                userId: null,
+                userAgent: null,
+                route: null,
+                module: null,
+                ipAddress: null,
+                userType: 'system',
             ));
 
         $storage
@@ -178,7 +224,7 @@ final class AuditLoggerTest extends TestCase
             ->method('error')
             ->with(
                 $this->stringContains('DB error'),
-                $this->callback(fn(array $ctx) => isset($ctx['exception'])),
+                $this->callback(fn (array $ctx) => isset($ctx['exception'])),
             );
 
         $logger = new AuditLogger(
@@ -204,8 +250,12 @@ final class AuditLoggerTest extends TestCase
         $contextProvider
             ->method('getInfo')
             ->willReturn(new ContextInfo(
-                userId: null, userAgent: null, route: null,
-                module: null, ipAddress: null, userType: 'system',
+                userId: null,
+                userAgent: null,
+                route: null,
+                module: null,
+                ipAddress: null,
+                userType: 'system',
             ));
 
         $storage
@@ -237,8 +287,12 @@ final class AuditLoggerTest extends TestCase
         $contextProvider
             ->method('getInfo')
             ->willReturn(new ContextInfo(
-                userId: null, userAgent: null, route: null,
-                module: null, ipAddress: null, userType: 'system',
+                userId: null,
+                userAgent: null,
+                route: null,
+                module: null,
+                ipAddress: null,
+                userType: 'system',
             ));
 
         $storage
@@ -274,8 +328,12 @@ final class AuditLoggerTest extends TestCase
         $contextProvider
             ->method('getInfo')
             ->willReturn(new ContextInfo(
-                userId: null, userAgent: null, route: null,
-                module: null, ipAddress: null, userType: 'system',
+                userId: null,
+                userAgent: null,
+                route: null,
+                module: null,
+                ipAddress: null,
+                userType: 'system',
             ));
 
         $storage
@@ -406,8 +464,8 @@ final class AuditLoggerTest extends TestCase
             ->willReturnCallback(function (object $event): void {
                 if ($event instanceof BeforeLogEvent) {
                     // Modify data in event
-                    $event->setChangedAttributes(['email' => ['old' => 'old@test.com', 'new' => 'new@test.com']]);
-                    $event->addCustomData('audit_reason', 'manual review');
+                    $event->changedAttributes = ['email' => ['old' => 'old@test.com', 'new' => 'new@test.com']];
+                    $event->customData['audit_reason'] = 'manual review';
                 }
             });
 
@@ -704,6 +762,25 @@ final class AuditLoggerTest extends TestCase
         $this->assertEmpty($changes);
     }
 
+    #[Test]
+    public function formatChangedAttributesShouldDetectRemovedKeys(): void
+    {
+        $logger = new AuditLogger(
+            storage: $this->createMock(AuditStorageInterface::class),
+            contextProvider: $this->createMock(ContextProviderInterface::class),
+            systemExcludeAttributes: [],
+        );
+
+        $oldAttributes = ['name' => 'John', 'nickname' => 'jd'];
+        $newAttributes = ['name' => 'John']; // 'nickname' removed
+
+        $changes = $logger->formatChangedAttributes($oldAttributes, $newAttributes);
+
+        $this->assertArrayHasKey('nickname', $changes);
+        $this->assertSame('jd', $changes['nickname']['old']);
+        $this->assertNull($changes['nickname']['new']);
+    }
+
     // ============================================================
     // Group C: isEnabledForEntity() — unit tests
     // ============================================================
@@ -766,7 +843,7 @@ final class AuditLoggerTest extends TestCase
                 $this->stringContains('Audit log error in test context'),
                 $this->callback(function (array $context): bool {
                     return isset($context['exception']) && $context['exception'] instanceof \RuntimeException;
-                })
+                }),
             );
 
         $logger = new AuditLogger(
@@ -796,5 +873,343 @@ final class AuditLoggerTest extends TestCase
 
         // If we got here — test passed
         $this->assertTrue(true);
+    }
+
+    // ============================================================
+    // Group D: logBatch() — batch logging
+    // ============================================================
+
+    private function makeContextProvider(): ContextProviderInterface
+    {
+        $provider = $this->createMock(ContextProviderInterface::class);
+        $provider->method('getInfo')->willReturn(new ContextInfo(
+            userId: 1,
+            userAgent: null,
+            route: null,
+            module: null,
+            ipAddress: null,
+            userType: 'user',
+        ));
+
+        return $provider;
+    }
+
+    #[Test]
+    public function logBatchShouldDoNothingForEmptyArray(): void
+    {
+        $storage = $this->createMock(AuditStorageInterface::class);
+        $storage->expects($this->never())->method('saveBatch');
+
+        $logger = new AuditLogger(
+            storage: $storage,
+            contextProvider: $this->makeContextProvider(),
+        );
+
+        $logger->logBatch([]);
+    }
+
+    #[Test]
+    public function logBatchShouldCallSaveBatchWithLogEntries(): void
+    {
+        $storage = $this->createMock(AuditStorageInterface::class);
+
+        $savedEntries = null;
+        $storage
+            ->expects($this->once())
+            ->method('saveBatch')
+            ->willReturnCallback(function (array $entries) use (&$savedEntries): void {
+                $savedEntries = $entries;
+            });
+
+        $logger = new AuditLogger(
+            storage: $storage,
+            contextProvider: $this->makeContextProvider(),
+        );
+
+        $logger->logBatch([
+            ['entityClass' => 'App\Models\User', 'entityId' => 1, 'operation' => Operation::Update],
+            ['entityClass' => 'App\Models\User', 'entityId' => 2, 'operation' => Operation::Delete],
+        ]);
+
+        $this->assertIsArray($savedEntries);
+        $this->assertCount(2, $savedEntries);
+        $this->assertInstanceOf(LogEntry::class, $savedEntries[0]);
+        $this->assertSame(1, $savedEntries[0]->entityId);
+        $this->assertSame(Operation::Update, $savedEntries[0]->operation);
+        $this->assertSame(2, $savedEntries[1]->entityId);
+        $this->assertSame(Operation::Delete, $savedEntries[1]->operation);
+    }
+
+    #[Test]
+    public function logBatchShouldSkipDisabledEntities(): void
+    {
+        $storage = $this->createMock(AuditStorageInterface::class);
+
+        $savedEntries = null;
+        $storage
+            ->expects($this->once())
+            ->method('saveBatch')
+            ->willReturnCallback(function (array $entries) use (&$savedEntries): void {
+                $savedEntries = $entries;
+            });
+
+        $logger = new AuditLogger(
+            storage: $storage,
+            contextProvider: $this->makeContextProvider(),
+            disabledEntities: ['App\Models\Post'],
+        );
+
+        $logger->logBatch([
+            ['entityClass' => 'App\Models\User', 'entityId' => 1, 'operation' => Operation::Update],
+            ['entityClass' => 'App\Models\Post', 'entityId' => 5, 'operation' => Operation::Insert],
+        ]);
+
+        $this->assertIsArray($savedEntries);
+        $this->assertCount(1, $savedEntries);
+        $this->assertSame('App\Models\User', $savedEntries[0]->entityClass);
+    }
+
+    #[Test]
+    public function logBatchShouldDoNothingWhenAllEntitiesDisabled(): void
+    {
+        $storage = $this->createMock(AuditStorageInterface::class);
+        $storage->expects($this->never())->method('saveBatch');
+
+        $logger = new AuditLogger(
+            storage: $storage,
+            contextProvider: $this->makeContextProvider(),
+            disabledEntities: ['App\Models\User'],
+        );
+
+        $logger->logBatch([
+            ['entityClass' => 'App\Models\User', 'entityId' => 1, 'operation' => Operation::Update],
+        ]);
+    }
+
+    #[Test]
+    public function logBatchShouldDispatchBeforeLogBatchEvent(): void
+    {
+        $storage = $this->createMock(AuditStorageInterface::class);
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+
+        $dispatchedEvents = [];
+        $eventDispatcher
+            ->method('dispatch')
+            ->willReturnCallback(function (object $event) use (&$dispatchedEvents): void {
+                $dispatchedEvents[] = $event;
+            });
+
+        $logger = new AuditLogger(
+            storage: $storage,
+            contextProvider: $this->makeContextProvider(),
+            eventDispatcher: $eventDispatcher,
+        );
+
+        $logger->logBatch([
+            ['entityClass' => 'App\Models\User', 'entityId' => 1, 'operation' => Operation::Update],
+        ]);
+
+        $this->assertCount(2, $dispatchedEvents);
+        $this->assertInstanceOf(BeforeLogBatchEvent::class, $dispatchedEvents[0]);
+        $this->assertInstanceOf(AfterLogBatchEvent::class, $dispatchedEvents[1]);
+    }
+
+    #[Test]
+    public function logBatchShouldCancelWhenPropagationStopped(): void
+    {
+        $storage = $this->createMock(AuditStorageInterface::class);
+        $storage->expects($this->never())->method('saveBatch');
+
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher
+            ->method('dispatch')
+            ->willReturnCallback(function (object $event): void {
+                if ($event instanceof BeforeLogBatchEvent) {
+                    $event->stopPropagation();
+                }
+            });
+
+        $logger = new AuditLogger(
+            storage: $storage,
+            contextProvider: $this->makeContextProvider(),
+            eventDispatcher: $eventDispatcher,
+        );
+
+        $logger->logBatch([
+            ['entityClass' => 'App\Models\User', 'entityId' => 1, 'operation' => Operation::Update],
+        ]);
+    }
+
+    #[Test]
+    public function logBatchShouldUseBatchModifiedByBeforeEvent(): void
+    {
+        $storage = $this->createMock(AuditStorageInterface::class);
+
+        $savedEntries = null;
+        $storage
+            ->method('saveBatch')
+            ->willReturnCallback(function (array $entries) use (&$savedEntries): void {
+                $savedEntries = $entries;
+            });
+
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher
+            ->method('dispatch')
+            ->willReturnCallback(function (object $event): void {
+                if ($event instanceof BeforeLogBatchEvent) {
+                    // Remove second item
+                    $event->items = [$event->items[0]];
+                }
+            });
+
+        $logger = new AuditLogger(
+            storage: $storage,
+            contextProvider: $this->makeContextProvider(),
+            eventDispatcher: $eventDispatcher,
+        );
+
+        $logger->logBatch([
+            ['entityClass' => 'App\Models\User', 'entityId' => 1, 'operation' => Operation::Update],
+            ['entityClass' => 'App\Models\User', 'entityId' => 2, 'operation' => Operation::Delete],
+        ]);
+
+        $this->assertIsArray($savedEntries);
+        $this->assertCount(1, $savedEntries);
+        $this->assertSame(1, $savedEntries[0]->entityId);
+    }
+
+    #[Test]
+    public function logBatchShouldNotDispatchAfterBatchEventOnStorageFailure(): void
+    {
+        $storage = $this->createMock(AuditStorageInterface::class);
+        $storage->method('saveBatch')->willThrowException(new \RuntimeException('DB error'));
+
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher
+            ->expects($this->once())
+            ->method('dispatch')
+            ->with($this->isInstanceOf(BeforeLogBatchEvent::class));
+
+        $logger = new AuditLogger(
+            storage: $storage,
+            contextProvider: $this->makeContextProvider(),
+            eventDispatcher: $eventDispatcher,
+            errorMode: AuditErrorMode::Ignore,
+        );
+
+        $logger->logBatch([
+            ['entityClass' => 'App\Models\User', 'entityId' => 1, 'operation' => Operation::Update],
+        ]);
+    }
+
+    #[Test]
+    public function logBatchShouldThrowWithThrowMode(): void
+    {
+        $storage = $this->createMock(AuditStorageInterface::class);
+        $storage->method('saveBatch')->willThrowException(new \RuntimeException('Batch failed'));
+
+        $logger = new AuditLogger(
+            storage: $storage,
+            contextProvider: $this->makeContextProvider(),
+            errorMode: AuditErrorMode::Throw,
+        );
+
+        $this->expectException(AuditLogException::class);
+        $this->expectExceptionMessage('Batch failed');
+
+        $logger->logBatch([
+            ['entityClass' => 'App\Models\User', 'entityId' => 1, 'operation' => Operation::Update],
+        ]);
+    }
+
+    #[Test]
+    public function logBatchShouldPassChangedAttributesAndCustomData(): void
+    {
+        $storage = $this->createMock(AuditStorageInterface::class);
+
+        $savedEntries = null;
+        $storage
+            ->method('saveBatch')
+            ->willReturnCallback(function (array $entries) use (&$savedEntries): void {
+                $savedEntries = $entries;
+            });
+
+        $logger = new AuditLogger(
+            storage: $storage,
+            contextProvider: $this->makeContextProvider(),
+        );
+
+        $logger->logBatch([
+            [
+                'entityClass' => 'App\Models\User',
+                'entityId' => 1,
+                'operation' => Operation::Update,
+                'changedAttributes' => ['name' => ['old' => 'John', 'new' => 'Jane']],
+                'customData' => ['source' => 'import'],
+            ],
+        ]);
+
+        $this->assertIsArray($savedEntries);
+        $this->assertCount(1, $savedEntries);
+        $this->assertSame(['name' => ['old' => 'John', 'new' => 'Jane']], $savedEntries[0]->changedAttributes);
+        $this->assertSame(['source' => 'import'], $savedEntries[0]->customData);
+    }
+
+    #[Test]
+    public function logBatchShouldDefaultToEmptyChangesAndCustomData(): void
+    {
+        $storage = $this->createMock(AuditStorageInterface::class);
+
+        $savedEntries = null;
+        $storage
+            ->method('saveBatch')
+            ->willReturnCallback(function (array $entries) use (&$savedEntries): void {
+                $savedEntries = $entries;
+            });
+
+        $logger = new AuditLogger(
+            storage: $storage,
+            contextProvider: $this->makeContextProvider(),
+        );
+
+        $logger->logBatch([
+            ['entityClass' => 'App\Models\User', 'entityId' => 1, 'operation' => Operation::Insert],
+        ]);
+
+        $this->assertIsArray($savedEntries);
+        $this->assertSame([], $savedEntries[0]->changedAttributes);
+        $this->assertSame([], $savedEntries[0]->customData);
+    }
+
+    #[Test]
+    public function logBatchAfterEventContainsSavedEntries(): void
+    {
+        $storage = $this->createMock(AuditStorageInterface::class);
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+
+        $afterEvent = null;
+        $eventDispatcher
+            ->method('dispatch')
+            ->willReturnCallback(function (object $event) use (&$afterEvent): void {
+                if ($event instanceof AfterLogBatchEvent) {
+                    $afterEvent = $event;
+                }
+            });
+
+        $logger = new AuditLogger(
+            storage: $storage,
+            contextProvider: $this->makeContextProvider(),
+            eventDispatcher: $eventDispatcher,
+        );
+
+        $logger->logBatch([
+            ['entityClass' => 'App\Models\User', 'entityId' => 10, 'operation' => Operation::Update],
+            ['entityClass' => 'App\Models\User', 'entityId' => 20, 'operation' => Operation::Delete],
+        ]);
+
+        $this->assertInstanceOf(AfterLogBatchEvent::class, $afterEvent);
+        $this->assertCount(2, $afterEvent->entries);
+        $this->assertSame(10, $afterEvent->entries[0]->entityId);
+        $this->assertSame(20, $afterEvent->entries[1]->entityId);
     }
 }

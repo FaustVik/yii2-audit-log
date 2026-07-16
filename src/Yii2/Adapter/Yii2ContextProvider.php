@@ -6,7 +6,6 @@ namespace FaustVik\AuditLog\Yii2\Adapter;
 
 use FaustVik\AuditLog\Core\Contracts\ContextProviderInterface;
 use FaustVik\AuditLog\Core\DTO\ContextInfo;
-use Yii;
 use yii\web\Application as WebApplication;
 
 /**
@@ -64,17 +63,17 @@ final class Yii2ContextProvider implements ContextProviderInterface
 
     public function getRoute(): ?string
     {
-        if (Yii::$app->controller === null) {
+        if (\Yii::$app->controller === null) {
             return null;
         }
 
-        return Yii::$app->controller->getRoute();
+        return \Yii::$app->controller->getRoute();
     }
 
     public function getModule(): ?string
     {
-        if (Yii::$app->controller && Yii::$app->controller->module) {
-            return Yii::$app->controller->module->id;
+        if (\Yii::$app->controller && \Yii::$app->controller->module) {
+            return \Yii::$app->controller->module->id;
         }
 
         return null;
@@ -82,8 +81,8 @@ final class Yii2ContextProvider implements ContextProviderInterface
 
     public function getIpAddress(): ?string
     {
-        if (Yii::$app instanceof WebApplication && Yii::$app->has('request')) {
-            return Yii::$app->request->userIP;
+        if (\Yii::$app instanceof WebApplication && \Yii::$app->has('request')) {
+            return \Yii::$app->request->userIP;
         }
 
         return null;
@@ -91,8 +90,8 @@ final class Yii2ContextProvider implements ContextProviderInterface
 
     public function getUserAgent(): ?string
     {
-        if (Yii::$app instanceof WebApplication && Yii::$app->has('request')) {
-            return Yii::$app->request->userAgent;
+        if (\Yii::$app instanceof WebApplication && \Yii::$app->has('request')) {
+            return \Yii::$app->request->userAgent;
         }
 
         return null;
@@ -100,8 +99,8 @@ final class Yii2ContextProvider implements ContextProviderInterface
 
     public function getUserId(): int|string|null
     {
-        if (Yii::$app->has('user')) {
-            return Yii::$app->user->id;
+        if (\Yii::$app->has('user')) {
+            return \Yii::$app->user->id;
         }
 
         return null;
@@ -129,7 +128,7 @@ final class Yii2ContextProvider implements ContextProviderInterface
         }
 
         // Console application
-        if (!(Yii::$app instanceof WebApplication)) {
+        if (!(\Yii::$app instanceof WebApplication)) {
             return 'console';
         }
 

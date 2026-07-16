@@ -12,6 +12,8 @@ declare(strict_types=1);
  * @var string $resetUrl
  * @var bool $preserveQueryParams
  * @var array<int, \FaustVik\AuditLog\Core\Enums\FilterParam> $filterParams
+ * @var string $pageName
+ * @var array{currentPage: int, pageSize: int, totalCount: int, pageCount: int, pageName: string}|null $pagination
  * @var \yii\base\View $this
  */
 
@@ -20,6 +22,18 @@ use FaustVik\AuditLog\Core\Enums\Operation;
 use yii\helpers\Html;
 
 $filterParamValues = array_map(static fn (FilterParam $p): string => $p->value, $filterParams);
+// Also exclude the page param so filter submission always resets to page 1
+$skipParams = array_merge($filterParamValues, [$pageName]);
+
+$totalCount = $pagination !== null ? $pagination['totalCount'] : count($logs);
+
+if ($pagination !== null) {
+    $from = ($pagination['currentPage'] - 1) * $pagination['pageSize'] + 1;
+    $to = min($pagination['currentPage'] * $pagination['pageSize'], $totalCount);
+    $countLabel = "Showing {$from}–{$to} of {$totalCount}";
+} else {
+    $countLabel = "Total records: {$totalCount}";
+}
 
 $dateFrom = is_string($filters[FilterParam::DateFrom->value] ?? null) ? $filters[FilterParam::DateFrom->value] : '';
 $dateTo = is_string($filters[FilterParam::DateTo->value] ?? null) ? $filters[FilterParam::DateTo->value] : '';
@@ -35,9 +49,9 @@ $dateTo = is_string($filters[FilterParam::DateTo->value] ?? null) ? $filters[Fil
         <!-- Filter form -->
         <form method="get" class="<?= $cssClasses['filterContainer'] ?? 'audit-log-filters' ?>" style="margin-bottom: 20px; padding: 15px; background: #f9f9f9; border-radius: 4px;">
             <?php if ($preserveQueryParams): ?>
-                <!-- Preserve current URL parameters (except filter params) -->
+                <!-- Preserve current URL parameters (except filter params and page) -->
                 <?php foreach (Yii::$app->request->queryParams as $name => $value): ?>
-                    <?php if (!in_array($name, $filterParamValues, true)): ?>
+                    <?php if (!in_array($name, $skipParams, true)): ?>
                         <?= Html::hiddenInput($name, $value) ?>
                     <?php endif; ?>
                 <?php endforeach; ?>
@@ -85,10 +99,18 @@ $dateTo = is_string($filters[FilterParam::DateTo->value] ?? null) ? $filters[Fil
         ]) ?>
 
         <div class="<?= $cssClasses['footer'] ?>">
-            <p class="text-muted">
-                <i class="fa fa-info-circle"></i>
-                Total records: <strong><?= count($logs) ?></strong>
-            </p>
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                <p class="text-muted" style="margin: 0;">
+                    <i class="fa fa-info-circle"></i>
+                    <?= htmlspecialchars($countLabel, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>
+                </p>
+                <?php if ($pagination !== null): ?>
+                    <?= $this->render('_pagination', [
+                        'pagination' => $pagination,
+                        'cssClasses' => $cssClasses,
+                    ]) ?>
+                <?php endif; ?>
+            </div>
         </div>
     </div>
 </div>

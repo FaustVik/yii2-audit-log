@@ -5,7 +5,8 @@ Audit logging package for Yii2 applications with framework-agnostic core.
 ## Features
 
 - **Automatic logging** - INSERT, UPDATE, DELETE operations via Behavior
-- **Events** - Before/After log events for customization
+- **Batch logging** - Atomic multi-record saves with `logBatch()` — all or nothing
+- **Events** - Before/After log events for customization (including batch events)
 - **Query builder** - Advanced filtering with AuditLogQuery
 - **Ready-to-use widgets** - Display change history with filters
 - **Framework-agnostic core** - Can be used with any PHP framework
@@ -47,9 +48,9 @@ class User extends ActiveRecord
 
 ```php
 <?= \FaustVik\AuditLog\Yii2\Integration\AuditLogFilterWidget::widget([
-    'model' => $user,
-    'limit' => 50,
-    'title' => 'Change History',
+    'model'    => $user,
+    'pageSize' => 20,
+    'title'    => 'Change History',
 ]) ?>
 ```
 
@@ -75,7 +76,7 @@ src/
 │   ├── Contracts/           # Interfaces
 │   ├── DTO/                 # Data Transfer Objects
 │   ├── Enums/               # Enumerations
-│   ├── Events/              # BeforeLogEvent, AfterLogEvent
+│   ├── Events/              # BeforeLogEvent, AfterLogEvent, BeforeLogBatchEvent, AfterLogBatchEvent
 │   ├── Exceptions/          # Exceptions
 │   ├── Query/               # AuditLogQuery
 │   └── Services/            # AuditLogger
@@ -103,6 +104,51 @@ Yii::$app->on(
 );
 ```
 
+### Batch Logging
+
+Log multiple operations atomically — either all records are saved or none (transaction is rolled back on failure).
+
+```php
+/** @var \FaustVik\AuditLog\Core\Contracts\AuditLoggerInterface $logger */
+
+$logger->logBatch([
+    [
+        'entityClass' => User::class,
+        'entityId'    => 1,
+        'operation'   => \FaustVik\AuditLog\Core\Enums\Operation::Update,
+        'changedAttributes' => [
+            'status' => ['old' => 'active', 'new' => 'banned'],
+        ],
+        'customData' => ['reason' => 'policy violation'],
+    ],
+    [
+        'entityClass' => UserProfile::class,
+        'entityId'    => 1,
+        'operation'   => \FaustVik\AuditLog\Core\Enums\Operation::Update,
+    ],
+]);
+```
+
+**Cancelling a batch via event:**
+
+```php
+Yii::$app->on(
+    \FaustVik\AuditLog\Core\Events\BeforeLogBatchEvent::class,
+    function (\FaustVik\AuditLog\Core\Events\BeforeLogBatchEvent $event) {
+        // Stop the entire batch
+        $event->stopPropagation();
+
+        // Or filter items — remove sensitive entities
+        $event->items = array_values(array_filter(
+            $event->items,
+            fn ($item) => $item['entityClass'] !== SensitiveModel::class,
+        ));
+    }
+);
+```
+
+**Atomicity:** `logBatch()` wraps all inserts in a single database transaction. If any insert fails, the transaction is rolled back and no records are saved. The error is then handled according to the configured `AuditErrorMode` (`Ignore` / `Log` / `Throw`).
+
 ### Query Logs
 
 ```php
@@ -111,11 +157,19 @@ use FaustVik\AuditLog\Core\Contracts\AuditStorageInterface;
 
 $storage = Yii::createObject(AuditStorageInterface::class);
 
+// All changes for a specific User record
 $logs = (new AuditLogQuery($storage))
-    ->forEntity(User::class, $userId)
+    ->forEntityClass(User::class)
+    ->forEntityId($userId)
     ->operation(\FaustVik\AuditLog\Core\Enums\Operation::Update)
     ->dateRange('2025-01-01', '2025-12-31')
     ->limit(50)
+    ->all();
+
+// All changes across all User records today (no specific ID required)
+$allUserChangesToday = (new AuditLogQuery($storage))
+    ->forEntityClass(User::class)
+    ->dateRange(date('Y-m-d'), date('Y-m-d'))
     ->all();
 ```
 

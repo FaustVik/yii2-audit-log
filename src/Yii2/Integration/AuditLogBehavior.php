@@ -7,7 +7,6 @@ namespace FaustVik\AuditLog\Yii2\Integration;
 use FaustVik\AuditLog\Core\Contracts\AuditLoggerInterface;
 use FaustVik\AuditLog\Core\Enums\Operation;
 use FaustVik\AuditLog\Core\Exceptions\InvalidOwnerException;
-use Yii;
 use yii\base\Behavior;
 use yii\db\ActiveRecord;
 use yii\db\AfterSaveEvent;
@@ -25,6 +24,11 @@ class AuditLogBehavior extends Behavior
      * @var array<int, string> Attributes to exclude from logging
      */
     public array $excludeAttributes = [];
+
+    /**
+     * @var array<int, string> System attributes always excluded from change diffs
+     */
+    public array $systemExcludeAttributes = ['created_at', 'updated_at', 'date_created', 'date_updated'];
 
     /**
      * @var array<string, callable(ActiveRecord): mixed|string> Custom fields for logging.
@@ -54,13 +58,18 @@ class AuditLogBehavior extends Behavior
      */
     private array $_oldAttributes = [];
 
+    /**
+     * @var AuditLoggerInterface|null Resolved service instance (cached per request)
+     */
+    private ?AuditLoggerInterface $_resolvedService = null;
+
     public function attach($owner): void
     {
         // @phpstan-ignore instanceof.alwaysTrue (runtime safety check)
         if (!$owner instanceof ActiveRecord) {
             throw new InvalidOwnerException(
                 'AuditLogBehavior can only be attached to ActiveRecord instances. '
-                . get_class($owner) . ' given.'
+                . get_class($owner) . ' given.',
             );
         }
 
@@ -102,7 +111,7 @@ class AuditLogBehavior extends Behavior
             if (!empty($changedAttributes)) {
                 $this->logOperation(
                     operation: Operation::Update,
-                    changedAttributes: $changedAttributes
+                    changedAttributes: $changedAttributes,
                 );
             }
         }
@@ -141,20 +150,25 @@ class AuditLogBehavior extends Behavior
      */
     private function getChangedAttributes(): array
     {
-        $excludeAttributes = $this->getAllExcludeAttributes();
-        return $this->getAuditService()->formatChangedAttributes(
-            oldAttributes: $this->_oldAttributes,
-            newAttributes: $this->owner->getAttributes(),
-            excludeAttributes: $excludeAttributes
-        );
-    }
+        $exclude = array_merge($this->systemExcludeAttributes, $this->excludeAttributes);
+        $old = $this->_oldAttributes;
+        $new = $this->owner->getAttributes();
+        $changes = [];
 
-    /**
-     * @return array<int, string>
-     */
-    private function getAllExcludeAttributes(): array
-    {
-        return $this->excludeAttributes;
+        foreach (array_unique(array_merge(array_keys($old), array_keys($new))) as $key) {
+            if (in_array($key, $exclude, true)) {
+                continue;
+            }
+
+            $oldValue = $old[$key] ?? null;
+            $newValue = $new[$key] ?? null;
+
+            if ($oldValue !== $newValue) {
+                $changes[$key] = ['old' => $oldValue, 'new' => $newValue];
+            }
+        }
+
+        return $changes;
     }
 
     /**
@@ -198,10 +212,10 @@ class AuditLogBehavior extends Behavior
     private function getAuditService(): AuditLoggerInterface
     {
         if ($this->auditService !== null) {
-            return $this->auditService; // For tests
+            return $this->auditService;
         }
 
-        return Yii::createObject(AuditLoggerInterface::class);
+        return $this->_resolvedService ??= \Yii::createObject(AuditLoggerInterface::class);
     }
 
     private function isLoggingEnabled(): bool

@@ -1,183 +1,158 @@
 # События
 
-Пакет поддерживает события для кастомизации логирования.
+Пакет диспатчит события до и после каждой операции логирования, позволяя инспектировать, изменять или отменять запись.
 
-## Доступные события
+## События одиночной записи
 
 ### BeforeLogEvent
 
-Вызывается ПЕРЕД логированием. Позволяет:
-- Изменить данные перед записью
-- Отменить логирование
+Срабатывает **перед** сохранением одной операции. Можно изменить данные или отменить логирование.
 
 ```php
 use FaustVik\AuditLog\Core\Events\BeforeLogEvent;
 use FaustVik\AuditLog\Core\Enums\Operation;
-use app\models\User;
 
-// В bootstrap.php или config
+// В bootstrap.php
 Yii::$app->on(BeforeLogEvent::class, function (BeforeLogEvent $event) {
-    // Отменить логирование удаления пользователей
+    // Отменить логирование
     if ($event->entityClass === User::class && $event->operation === Operation::Delete) {
-        $event->stopPropagation(); // Отменить логирование
+        $event->stopPropagation();
+        return;
     }
-    
-    // Скрыть чувствительные данные
+
+    // Скрыть чувствительные поля (прямой доступ к свойствам)
     if (isset($event->changedAttributes['password_hash'])) {
-        $event->changedAttributes['password_hash'] = [
-            'old' => '[REDACTED]',
-            'new' => '[REDACTED]',
-        ];
+        $event->changedAttributes['password_hash'] = ['old' => '[REDACTED]', 'new' => '[REDACTED]'];
     }
-    
+
     // Добавить дополнительные данные
-    $event->addCustomData('server', gethostname());
+    $event->customData['server'] = gethostname();
 });
+```
+
+**Только для чтения:** `entityClass`, `entityId`, `operation`
+
+**Изменяемые:** `changedAttributes`, `customData`
+
+**Методы:**
+```php
+$event->stopPropagation();      // отменить логирование
+$event->isPropagationStopped(); // проверить статус
 ```
 
 ### AfterLogEvent
 
-Вызывается ПОСЛЕ логирования. Только чтение.
+Срабатывает **после** успешного сохранения записи. Все свойства только для чтения.
 
 ```php
 use FaustVik\AuditLog\Core\Events\AfterLogEvent;
 use FaustVik\AuditLog\Core\Enums\Operation;
 
 Yii::$app->on(AfterLogEvent::class, function (AfterLogEvent $event) {
-    // Логирование удаления записей
     if ($event->operation === Operation::Delete) {
-        Yii::info("Запись удалена: {$event->entityClass} #{$event->entityId}");
-    }
-    
-    // Отправить уведомление о важных изменениях
-    if ($event->entityClass === User::class && $event->operation === Operation::Update) {
-        // Отправить email, push-уведомление и т.д.
+        Yii::info("Удалено: {$event->entityClass} #{$event->entityId}");
     }
 });
 ```
 
-## Методы событий
+**Свойства:** `entityClass`, `entityId`, `operation`, `logEntry`
 
-### BeforeLogEvent
+> `AfterLogEvent` **не** диспатчится, если хранилище бросило исключение.
 
-```php
-// Остановить распространение (отменить логирование)
-$event->stopPropagation();
+---
 
-// Проверить, остановлено ли распространение
-$event->isPropagationStopped();
+## Пакетные события
 
-// Установить изменённые атрибуты
-$event->setChangedAttributes([...]);
+`logBatch()` сохраняет несколько записей в одной транзакции. Два события оборачивают весь пакет.
 
-// Добавить изменённый атрибут
-$event->addChangedAttribute('attribute', ['old' => 'old_value', 'new' => 'new_value']);
+### BeforeLogBatchEvent
 
-// Удалить изменённый атрибут
-$event->removeChangedAttribute('attribute');
-
-// Установить дополнительные данные
-$event->setCustomData(['key' => 'value']);
-
-// Добавить дополнительные данные
-$event->addCustomData('key', 'value');
-
-// Удалить дополнительные данные
-$event->removeCustomData('key');
-```
-
-### AfterLogEvent
-
-Свойства только для чтения:
+Срабатывает один раз **перед** сохранением всего пакета. Изменяйте `$event->items` для фильтрации или правки; вызовите `stopPropagation()` для полной отмены.
 
 ```php
-$event->entityClass      // Класс сущности (FQCN)
-$event->entityId         // ID сущности
-$event->operation        // Тип операции (Operation enum)
-$event->logEntry         // Объект LogEntry
-```
+use FaustVik\AuditLog\Core\Events\BeforeLogBatchEvent;
 
-## Примеры использования
-
-### 1. Условное логирование
-
-```php
-Yii::$app->on(BeforeLogEvent::class, function (BeforeLogEvent $event) {
-    // Логировать только важные изменения
-    if (count($event->changedAttributes) < 2) {
+Yii::$app->on(BeforeLogBatchEvent::class, function (BeforeLogBatchEvent $event) {
+    // Отменить весь пакет
+    if (someCondition()) {
         $event->stopPropagation();
+        return;
+    }
+
+    // Исключить чувствительные сущности
+    $event->items = array_values(array_filter(
+        $event->items,
+        fn ($item) => $item['entityClass'] !== SensitiveModel::class,
+    ));
+});
+```
+
+**Изменяемое свойство:** `items` — весь массив пакета; замените его, чтобы изменить то, что будет сохранено.
+
+**Методы:**
+```php
+$event->stopPropagation();      // отменить весь пакет
+$event->isPropagationStopped(); // проверить статус
+```
+
+### AfterLogBatchEvent
+
+Срабатывает один раз **после** успешного коммита транзакции. Содержит все сохранённые записи.
+
+```php
+use FaustVik\AuditLog\Core\Events\AfterLogBatchEvent;
+
+Yii::$app->on(AfterLogBatchEvent::class, function (AfterLogBatchEvent $event) {
+    foreach ($event->entries as $entry) {
+        // $entry — объект LogEntry
+        Yii::info("Batch-сохранено: {$entry->entityClass} #{$entry->entityId}");
     }
 });
 ```
 
-### 2. Аудит для конкретных пользователей
+**Свойство:** `entries` — `LogEntry[]`, только для чтения.
 
-```php
-Yii::$app->on(BeforeLogEvent::class, function (BeforeLogEvent $event) {
-    // Логировать только действия админов
-    if (Yii::$app->user->identity && !Yii::$app->user->identity->isAdmin()) {
-        $event->stopPropagation();
-    }
-});
-```
+> `AfterLogBatchEvent` **не** диспатчится при откате транзакции.
 
-### 3. Внешнее логирование
+---
 
-```php
-Yii::$app->on(AfterLogEvent::class, function (AfterLogEvent $event) {
-    // Отправить во внешнюю систему
-    $externalLogger->log([
-        'entity' => $event->entityClass,
-        'id' => $event->entityId,
-        'operation' => $event->operation->value,
-        'timestamp' => date('Y-m-d H:i:s'),
-    ]);
-});
-```
+## Атомарность logBatch()
+
+`logBatch()` оборачивает все вставки в единую транзакцию базы данных:
+
+- **Все успешны** → транзакция коммитится → диспатчится `AfterLogBatchEvent`.
+- **Любая вставка упала** → транзакция откатывается → ни одна запись не сохранена → ошибка обрабатывается согласно `AuditErrorMode`.
+
+**Частичное сохранение невозможно.** Корректность аудита важнее устойчивости к единичным ошибкам.
+
+---
 
 ## Совместимость с PSR-14
 
-Пакет использует простой интерфейс диспетчера событий. Если вы хотите использовать PSR-14 совместимый диспетчер (например, Symfony EventDispatcher), создайте адаптер:
+Пакет поставляется с минимальным `EventDispatcherInterface`. Для подключения PSR-14 диспатчера (например, Symfony) напишите адаптер:
 
 ```php
 use FaustVik\AuditLog\Core\Contracts\EventDispatcherInterface;
-use Psr\EventDispatcher\EventDispatcherInterface as PsrEventDispatcherInterface;
+use Psr\EventDispatcher\EventDispatcherInterface as PsrDispatcher;
 
-class PsrEventDispatcherAdapter implements EventDispatcherInterface
+final class PsrAdapter implements EventDispatcherInterface
 {
-    public function __construct(
-        private PsrEventDispatcherInterface $psrDispatcher
-    ) {}
+    public function __construct(private PsrDispatcher $inner) {}
 
     public function dispatch(object $event): void
     {
-        $this->psrDispatcher->dispatch($event);
+        $this->inner->dispatch($event);
     }
 
     public function hasListeners(string $eventName): bool
     {
-        // В PSR-14 нет этого метода, реализуйте по необходимости
         return false;
     }
 }
 ```
 
-Настройте DI контейнер:
+---
 
-```php
-'container' => [
-    'singletons' => [
-        // Ваш PSR-14 диспетчер (например, Symfony)
-        PsrEventDispatcherInterface::class => new SymfonyEventDispatcher(),
-        
-        // Наш адаптер
-        EventDispatcherInterface::class => new PsrEventDispatcherAdapter(
-            Yii::$container->get(PsrEventDispatcherInterface::class)
-        ),
-    ]
-]
-```
+## Следующий шаг
 
-## Следующие шаги
-
-- Назад к [Использование](usage.md)
+- Назад к [Использованию](usage.md)
