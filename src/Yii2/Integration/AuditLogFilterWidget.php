@@ -184,7 +184,11 @@ class AuditLogFilterWidget extends AuditLogWidget
         $dateTo = is_string($filters[FilterParam::DateTo->value] ?? null) ? $filters[FilterParam::DateTo->value] : null;
 
         if ($dateFrom !== null || $dateTo !== null) {
-            $query->dateRange($dateFrom, $dateTo);
+            try {
+                $query->dateRange($dateFrom, $dateTo);
+            } catch (\InvalidArgumentException) {
+                // skip invalid date filter silently
+            }
         }
 
         if (isset($filters[FilterParam::UserId->value])) {

@@ -230,18 +230,6 @@ final class AuditLogBehaviorTest extends TestCase
             ->method('isEnabledForEntity')
             ->willReturn(true);
 
-        // formatChangedAttributes will return diff
-        $service
-            ->method('formatChangedAttributes')
-            ->with(
-                oldAttributes: $oldAttributes,
-                newAttributes: $newAttributes,
-                excludeAttributes: [],
-            )
-            ->willReturn([
-                'name' => ['old' => 'John', 'new' => 'Jane'],
-            ]);
-
         $service
             ->expects($this->once())
             ->method('log')
@@ -259,9 +247,7 @@ final class AuditLogBehaviorTest extends TestCase
         ]);
         $behavior->attach($owner);
 
-        // First beforeUpdate to capture old attributes
         $behavior->beforeUpdate();
-        // Then afterUpdate
         $behavior->afterUpdate(new \yii\db\AfterSaveEvent());
     }
 
@@ -276,17 +262,6 @@ final class AuditLogBehaviorTest extends TestCase
         $service
             ->method('isEnabledForEntity')
             ->willReturn(true);
-
-        $service
-            ->method('formatChangedAttributes')
-            ->with(
-                oldAttributes: $oldAttributes,
-                newAttributes: $newAttributes,
-                excludeAttributes: ['password'],
-            )
-            ->willReturn([
-                'name' => ['old' => 'John', 'new' => 'Jane'],
-            ]);
 
         $service
             ->expects($this->once())
@@ -321,11 +296,6 @@ final class AuditLogBehaviorTest extends TestCase
             ->method('isEnabledForEntity')
             ->willReturn(true);
 
-        // formatChangedAttributes will return empty array
-        $service
-            ->method('formatChangedAttributes')
-            ->willReturn([]);
-
         $service
             ->expects($this->never())
             ->method('log');
@@ -334,6 +304,34 @@ final class AuditLogBehaviorTest extends TestCase
             'auditService' => $service,
             'logUpdate' => true,
         ]);
+        $behavior->attach($owner);
+
+        $behavior->beforeUpdate();
+        $behavior->afterUpdate(new \yii\db\AfterSaveEvent());
+    }
+
+    #[Test]
+    public function afterUpdateShouldExcludeSystemAttributes(): void
+    {
+        $oldAttributes = ['name' => 'John', 'updated_at' => 100, 'created_at' => 50];
+        $newAttributes = ['name' => 'Jane', 'updated_at' => 200, 'created_at' => 50];
+        $owner = $this->createOwner(attributes: $newAttributes, oldAttributes: $oldAttributes);
+
+        $service = $this->createMock(AuditLoggerInterface::class);
+        $service->method('isEnabledForEntity')->willReturn(true);
+
+        $service
+            ->expects($this->once())
+            ->method('log')
+            ->with(
+                entityClass: StubActiveRecord::class,
+                entityId: 1,
+                operation: Operation::Update,
+                changedAttributes: ['name' => ['old' => 'John', 'new' => 'Jane']],
+                customData: [],
+            );
+
+        $behavior = $this->createBehavior(['auditService' => $service, 'logUpdate' => true]);
         $behavior->attach($owner);
 
         $behavior->beforeUpdate();

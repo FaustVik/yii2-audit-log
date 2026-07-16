@@ -29,20 +29,6 @@ interface AuditLoggerInterface
     ): void;
 
     /**
-     * Format changed attributes for logging
-     *
-     * @param array<string, mixed> $oldAttributes Old values
-     * @param array<string, mixed> $newAttributes New values
-     * @param array<int, string> $excludeAttributes Attributes to exclude
-     * @return array<string, array<string, mixed>>
-     */
-    public function formatChangedAttributes(
-        array $oldAttributes,
-        array $newAttributes,
-        array $excludeAttributes = [],
-    ): array;
-
-    /**
      * Log multiple entity operations atomically.
      *
      * Dispatches a single BeforeLogBatchEvent — mutate $event->items to modify the batch,

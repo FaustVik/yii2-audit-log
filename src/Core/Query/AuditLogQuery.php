@@ -152,13 +152,33 @@ final class AuditLogQuery
      *
      * @param string|null $dateFrom Date from (YYYY-MM-DD) or null
      * @param string|null $dateTo Date to (YYYY-MM-DD) or null
+     * @throws \InvalidArgumentException if a non-null date does not match the YYYY-MM-DD format
      */
     public function dateRange(?string $dateFrom = null, ?string $dateTo = null): self
     {
+        if ($dateFrom !== null) {
+            $this->validateDate($dateFrom);
+        }
+
+        if ($dateTo !== null) {
+            $this->validateDate($dateTo);
+        }
+
         $this->dateFrom = $dateFrom;
         $this->dateTo = $dateTo;
 
         return $this;
+    }
+
+    private function validateDate(string $date): void
+    {
+        $parsed = \DateTimeImmutable::createFromFormat('Y-m-d', $date);
+
+        if ($parsed === false || $parsed->format('Y-m-d') !== $date) {
+            throw new \InvalidArgumentException(
+                "Invalid date format '{$date}': expected YYYY-MM-DD.",
+            );
+        }
     }
 
     /**

@@ -26,6 +26,11 @@ class AuditLogBehavior extends Behavior
     public array $excludeAttributes = [];
 
     /**
+     * @var array<int, string> System attributes always excluded from change diffs
+     */
+    public array $systemExcludeAttributes = ['created_at', 'updated_at', 'date_created', 'date_updated'];
+
+    /**
      * @var array<string, callable(ActiveRecord): mixed|string> Custom fields for logging.
      * Callable receives the model as first argument.
      */
@@ -145,20 +150,25 @@ class AuditLogBehavior extends Behavior
      */
     private function getChangedAttributes(): array
     {
-        $excludeAttributes = $this->getAllExcludeAttributes();
-        return $this->getAuditService()->formatChangedAttributes(
-            oldAttributes: $this->_oldAttributes,
-            newAttributes: $this->owner->getAttributes(),
-            excludeAttributes: $excludeAttributes,
-        );
-    }
+        $exclude = array_merge($this->systemExcludeAttributes, $this->excludeAttributes);
+        $old = $this->_oldAttributes;
+        $new = $this->owner->getAttributes();
+        $changes = [];
 
-    /**
-     * @return array<int, string>
-     */
-    private function getAllExcludeAttributes(): array
-    {
-        return $this->excludeAttributes;
+        foreach (array_unique(array_merge(array_keys($old), array_keys($new))) as $key) {
+            if (in_array($key, $exclude, true)) {
+                continue;
+            }
+
+            $oldValue = $old[$key] ?? null;
+            $newValue = $new[$key] ?? null;
+
+            if ($oldValue !== $newValue) {
+                $changes[$key] = ['old' => $oldValue, 'new' => $newValue];
+            }
+        }
+
+        return $changes;
     }
 
     /**

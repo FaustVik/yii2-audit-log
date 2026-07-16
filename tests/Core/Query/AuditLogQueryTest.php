@@ -448,6 +448,52 @@ final class AuditLogQueryTest extends TestCase
     }
 
     #[Test]
+    public function dateRangeShouldThrowOnInvalidDateFrom(): void
+    {
+        $storage = $this->createMock(AuditStorageInterface::class);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage("Invalid date format '2024-13-99': expected YYYY-MM-DD.");
+
+        (new AuditLogQuery($storage))->dateRange('2024-13-99', null);
+    }
+
+    #[Test]
+    public function dateRangeShouldThrowOnInvalidDateTo(): void
+    {
+        $storage = $this->createMock(AuditStorageInterface::class);
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        (new AuditLogQuery($storage))->dateRange(null, 'not-a-date');
+    }
+
+    #[Test]
+    public function dateRangeShouldThrowOnValidDateStringWithWrongFormat(): void
+    {
+        $storage = $this->createMock(AuditStorageInterface::class);
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        (new AuditLogQuery($storage))->dateRange('01/01/2024', null);
+    }
+
+    #[Test]
+    public function dateRangeShouldAcceptValidDates(): void
+    {
+        $storage = $this->createMock(AuditStorageInterface::class);
+        $storage->method('getWithFilters')->willReturn([]);
+
+        // Should not throw
+        (new AuditLogQuery($storage))
+            ->forEntityClass('App\Models\User')
+            ->dateRange('2024-01-01', '2024-12-31')
+            ->all();
+
+        $this->assertTrue(true);
+    }
+
+    #[Test]
     public function dateRangeShouldAcceptNulls(): void
     {
         $storage = $this->createMock(AuditStorageInterface::class);
