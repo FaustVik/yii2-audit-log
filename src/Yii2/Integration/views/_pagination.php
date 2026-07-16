@@ -26,7 +26,7 @@ $buildUrl = static function (int $page) use ($pageName): string {
     unset($params['route']);
     $params[$pageName] = $page;
     $qs = http_build_query($params);
-    return \Yii::$app->request->baseUrl . \Yii::$app->request->pathInfo . ($qs !== '' ? '?' . $qs : '');
+    return \Yii::$app->request->baseUrl . '/' . \Yii::$app->request->pathInfo . ($qs !== '' ? '?' . $qs : '');
 };
 
 // Show at most 7 page links around current page

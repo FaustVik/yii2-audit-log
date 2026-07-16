@@ -217,6 +217,6 @@ class AuditLogFilterWidget extends AuditLogWidget
 
         $queryString = http_build_query($params);
 
-        return \Yii::$app->request->baseUrl . \Yii::$app->request->pathInfo . ($queryString !== '' ? '?' . $queryString : '');
+        return \Yii::$app->request->baseUrl . '/' . \Yii::$app->request->pathInfo . ($queryString !== '' ? '?' . $queryString : '');
     }
 }

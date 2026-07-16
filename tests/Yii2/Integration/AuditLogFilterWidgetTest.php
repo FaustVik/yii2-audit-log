@@ -420,7 +420,7 @@ final class AuditLogFilterWidgetTest extends TestCase
         $reflection->setAccessible(true);
         $url = $reflection->invoke($widget);
 
-        $this->assertSame('/appuser/view', $url);
+        $this->assertSame('/app/user/view', $url);
     }
 
     // ============================================================
