@@ -11,7 +11,6 @@ declare(strict_types=1);
  * @var array{currentPage: int, pageSize: int, totalCount: int, pageCount: int, pageName: string}|null $pagination
  * @var \yii\base\View $this
  */
-
 $totalCount = $pagination !== null ? $pagination['totalCount'] : count($logs);
 
 if ($pagination !== null) {

@@ -12,7 +12,6 @@ declare(strict_types=1);
  * } $pagination
  * @var array<string, string> $cssClasses
  */
-
 if ($pagination['pageCount'] <= 1) {
     return;
 }
