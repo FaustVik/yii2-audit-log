@@ -55,7 +55,6 @@ final class Yii2AuditLogger implements AuditLoggerInterface
     public ?LoggerInterface $psrLogger = null;
 
     /**
-     * @var ExpressionResolver|null
      */
     private ?ExpressionResolver $resolver = null;
 
@@ -76,14 +75,10 @@ final class Yii2AuditLogger implements AuditLoggerInterface
     public $errorHandler = null;
 
     /**
-     * @param AuditStorageInterface $storage
-     * @param ContextProviderInterface $contextProvider
-     * @param EventDispatcherInterface|null $eventDispatcher
      * @param array<int, string> $systemExcludeAttributes
      * @param array<int, string> $disabledEntities
      * @param array<string, string> $userTypeMapping
      * @param array<int, string> $allowedUserTypes
-     * @param callable|null $errorHandler
      */
     public function __construct(
         public AuditStorageInterface $storage,
@@ -193,7 +188,7 @@ final class Yii2AuditLogger implements AuditLoggerInterface
     public function formatChangedAttributes(
         array $oldAttributes,
         array $newAttributes,
-        array $excludeAttributes = []
+        array $excludeAttributes = [],
     ): array {
         // Resolve Expression in attributes
         if ($this->resolveExpressions) {

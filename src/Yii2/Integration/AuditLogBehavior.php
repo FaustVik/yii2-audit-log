@@ -7,7 +7,6 @@ namespace FaustVik\AuditLog\Yii2\Integration;
 use FaustVik\AuditLog\Core\Contracts\AuditLoggerInterface;
 use FaustVik\AuditLog\Core\Enums\Operation;
 use FaustVik\AuditLog\Core\Exceptions\InvalidOwnerException;
-use Yii;
 use yii\base\Behavior;
 use yii\db\ActiveRecord;
 use yii\db\AfterSaveEvent;
@@ -65,7 +64,7 @@ class AuditLogBehavior extends Behavior
         if (!$owner instanceof ActiveRecord) {
             throw new InvalidOwnerException(
                 'AuditLogBehavior can only be attached to ActiveRecord instances. '
-                . get_class($owner) . ' given.'
+                . get_class($owner) . ' given.',
             );
         }
 
@@ -107,7 +106,7 @@ class AuditLogBehavior extends Behavior
             if (!empty($changedAttributes)) {
                 $this->logOperation(
                     operation: Operation::Update,
-                    changedAttributes: $changedAttributes
+                    changedAttributes: $changedAttributes,
                 );
             }
         }
@@ -150,7 +149,7 @@ class AuditLogBehavior extends Behavior
         return $this->getAuditService()->formatChangedAttributes(
             oldAttributes: $this->_oldAttributes,
             newAttributes: $this->owner->getAttributes(),
-            excludeAttributes: $excludeAttributes
+            excludeAttributes: $excludeAttributes,
         );
     }
 
@@ -206,7 +205,7 @@ class AuditLogBehavior extends Behavior
             return $this->auditService;
         }
 
-        return $this->_resolvedService ??= Yii::createObject(AuditLoggerInterface::class);
+        return $this->_resolvedService ??= \Yii::createObject(AuditLoggerInterface::class);
     }
 
     private function isLoggingEnabled(): bool

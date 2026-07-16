@@ -181,8 +181,8 @@ final class AuditLogQuery
     /**
      * Get all records matching filters
      *
-     * @return array<int, LogEntry>
      * @throws AuditLogException if forEntity() was not called
+     * @return array<int, LogEntry>
      */
     public function all(): array
     {

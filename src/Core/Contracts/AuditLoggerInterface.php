@@ -39,7 +39,7 @@ interface AuditLoggerInterface
     public function formatChangedAttributes(
         array $oldAttributes,
         array $newAttributes,
-        array $excludeAttributes = []
+        array $excludeAttributes = [],
     ): array;
 
     /**

@@ -8,7 +8,6 @@ use FaustVik\AuditLog\Core\Contracts\AuditStorageInterface;
 use FaustVik\AuditLog\Core\DTO\LogEntry;
 use FaustVik\AuditLog\Core\Enums\DisplayMode;
 use FaustVik\AuditLog\Core\Query\AuditLogQuery;
-use Yii;
 use yii\base\Widget;
 use yii\db\ActiveRecord;
 
@@ -128,7 +127,7 @@ class AuditLogWidget extends Widget
             return $this->storage; // For tests
         }
 
-        return Yii::createObject(AuditStorageInterface::class);
+        return \Yii::createObject(AuditStorageInterface::class);
     }
 
     protected function getWidgetViewPath(): string

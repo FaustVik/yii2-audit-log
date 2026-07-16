@@ -7,7 +7,6 @@ namespace FaustVik\AuditLog\Yii2\Integration;
 use FaustVik\AuditLog\Core\Enums\FilterParam;
 use FaustVik\AuditLog\Core\Enums\Operation;
 use FaustVik\AuditLog\Core\Query\AuditLogQuery;
-use Yii;
 
 /**
  * Widget for displaying model change history with filters
@@ -102,7 +101,7 @@ class AuditLogFilterWidget extends AuditLogWidget
         }
 
         $filters = $this->filters;
-        $request = Yii::$app->request;
+        $request = \Yii::$app->request;
 
         $operation = $request->get(FilterParam::Operation->value);
         if ($operation !== null && $operation !== '') {
@@ -158,7 +157,7 @@ class AuditLogFilterWidget extends AuditLogWidget
      */
     private function buildResetUrl(): string
     {
-        $params = Yii::$app->request->queryParams;
+        $params = \Yii::$app->request->queryParams;
         unset($params['route']);
 
         foreach ($this->filterParams as $filterParam) {
@@ -167,6 +166,6 @@ class AuditLogFilterWidget extends AuditLogWidget
 
         $queryString = http_build_query($params);
 
-        return Yii::$app->request->baseUrl . Yii::$app->request->pathInfo . ($queryString !== '' ? '?' . $queryString : '');
+        return \Yii::$app->request->baseUrl . \Yii::$app->request->pathInfo . ($queryString !== '' ? '?' . $queryString : '');
     }
 }

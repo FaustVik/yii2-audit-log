@@ -8,7 +8,6 @@ use FaustVik\AuditLog\Core\Contracts\AuditStorageInterface;
 use FaustVik\AuditLog\Core\DTO\LogEntry;
 use FaustVik\AuditLog\Core\Enums\Operation;
 use FaustVik\AuditLog\Core\Exceptions\StorageException;
-use Yii;
 use yii\db\ActiveRecord;
 use yii\db\JsonExpression;
 use yii\db\Query;
@@ -47,7 +46,7 @@ final class Yii2DatabaseStorage implements AuditStorageInterface
         $data = array_filter($data, static fn ($value): bool => $value !== null);
 
         try {
-            Yii::$app->db->createCommand()
+            \Yii::$app->db->createCommand()
                 ->insert($logTableName, $data)
                 ->execute();
         } catch (\Throwable $e) {
@@ -66,7 +65,7 @@ final class Yii2DatabaseStorage implements AuditStorageInterface
     public function getForEntity(
         string $entityClass,
         int|string $entityId,
-        int $limit = 0
+        int $limit = 0,
     ): array {
         return $this->getWithFilters(
             entityClass: $entityClass,
@@ -186,7 +185,7 @@ final class Yii2DatabaseStorage implements AuditStorageInterface
                 changedAttributes: $this->decodeJsonIfNeeded($row['changed_attributes']),
                 customData: $this->decodeJsonIfNeeded($row['custom_data']),
             ),
-            $rows
+            $rows,
         );
     }
 

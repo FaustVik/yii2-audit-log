@@ -29,7 +29,7 @@ interface AuditStorageInterface
     public function getForEntity(
         string $entityClass,
         int|string $entityId,
-        int $limit = 0
+        int $limit = 0,
     ): array;
 
     /**

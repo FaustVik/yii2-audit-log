@@ -59,17 +59,17 @@ abstract class BaseAuditLogMigration extends Migration
         $this->createIndex(
             name: 'idx_audit_entity_operation_created',
             table: $logTableName,
-            columns: ['entity_id', 'operation', 'created_at']
+            columns: ['entity_id', 'operation', 'created_at'],
         );
         $this->createIndex(
             name: 'idx_audit_user_created',
             table: $logTableName,
-            columns: ['user_id', 'created_at']
+            columns: ['user_id', 'created_at'],
         );
         $this->createIndex(
             name: 'idx_audit_created',
             table: $logTableName,
-            columns: ['created_at']
+            columns: ['created_at'],
         );
     }
 }

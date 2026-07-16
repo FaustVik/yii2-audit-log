@@ -131,8 +131,12 @@ final class AuditLoggerTest extends TestCase
         $contextProvider
             ->method('getInfo')
             ->willReturn(new ContextInfo(
-                userId: null, userAgent: null, route: null,
-                module: null, ipAddress: null, userType: 'system',
+                userId: null,
+                userAgent: null,
+                route: null,
+                module: null,
+                ipAddress: null,
+                userType: 'system',
             ));
 
         $storage
@@ -165,8 +169,12 @@ final class AuditLoggerTest extends TestCase
         $contextProvider
             ->method('getInfo')
             ->willReturn(new ContextInfo(
-                userId: null, userAgent: null, route: null,
-                module: null, ipAddress: null, userType: 'system',
+                userId: null,
+                userAgent: null,
+                route: null,
+                module: null,
+                ipAddress: null,
+                userType: 'system',
             ));
 
         $storage->method('save')->willThrowException(new \RuntimeException('DB error'));
@@ -197,8 +205,12 @@ final class AuditLoggerTest extends TestCase
         $contextProvider
             ->method('getInfo')
             ->willReturn(new ContextInfo(
-                userId: null, userAgent: null, route: null,
-                module: null, ipAddress: null, userType: 'system',
+                userId: null,
+                userAgent: null,
+                route: null,
+                module: null,
+                ipAddress: null,
+                userType: 'system',
             ));
 
         $storage
@@ -210,7 +222,7 @@ final class AuditLoggerTest extends TestCase
             ->method('error')
             ->with(
                 $this->stringContains('DB error'),
-                $this->callback(fn(array $ctx) => isset($ctx['exception'])),
+                $this->callback(fn (array $ctx) => isset($ctx['exception'])),
             );
 
         $logger = new AuditLogger(
@@ -236,8 +248,12 @@ final class AuditLoggerTest extends TestCase
         $contextProvider
             ->method('getInfo')
             ->willReturn(new ContextInfo(
-                userId: null, userAgent: null, route: null,
-                module: null, ipAddress: null, userType: 'system',
+                userId: null,
+                userAgent: null,
+                route: null,
+                module: null,
+                ipAddress: null,
+                userType: 'system',
             ));
 
         $storage
@@ -269,8 +285,12 @@ final class AuditLoggerTest extends TestCase
         $contextProvider
             ->method('getInfo')
             ->willReturn(new ContextInfo(
-                userId: null, userAgent: null, route: null,
-                module: null, ipAddress: null, userType: 'system',
+                userId: null,
+                userAgent: null,
+                route: null,
+                module: null,
+                ipAddress: null,
+                userType: 'system',
             ));
 
         $storage
@@ -306,8 +326,12 @@ final class AuditLoggerTest extends TestCase
         $contextProvider
             ->method('getInfo')
             ->willReturn(new ContextInfo(
-                userId: null, userAgent: null, route: null,
-                module: null, ipAddress: null, userType: 'system',
+                userId: null,
+                userAgent: null,
+                route: null,
+                module: null,
+                ipAddress: null,
+                userType: 'system',
             ));
 
         $storage
@@ -817,7 +841,7 @@ final class AuditLoggerTest extends TestCase
                 $this->stringContains('Audit log error in test context'),
                 $this->callback(function (array $context): bool {
                     return isset($context['exception']) && $context['exception'] instanceof \RuntimeException;
-                })
+                }),
             );
 
         $logger = new AuditLogger(
