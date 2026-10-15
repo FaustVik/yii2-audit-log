@@ -6,12 +6,18 @@ namespace FaustVik\AuditLog\Core\Contracts;
 
 use FaustVik\AuditLog\Core\DTO\LogEntry;
 use FaustVik\AuditLog\Core\Enums\Operation;
+use FaustVik\AuditLog\Core\Enums\SortDirection;
 
 /**
  * Interface for audit log storage and retrieval
  */
 interface AuditStorageInterface
 {
+    /**
+     * Columns allowed in getWithFilters() ordering
+     */
+    public const SORTABLE_COLUMNS = ['id', 'entity_id', 'operation', 'created_at', 'user_id', 'user_type', 'route', 'module'];
+
     /**
      * Save a log entry
      */
@@ -28,21 +34,6 @@ interface AuditStorageInterface
     public function saveBatch(array $entries): void;
 
     /**
-     * Get logs for an entity
-     *
-     * @param string $entityClass Entity class (FQCN)
-     * @param int|string $entityId Entity ID
-     * @param int<0, max> $limit Records limit (0 = all)
-     * @return array<int, LogEntry>
-     * @deprecated Use getWithFilters() instead
-     */
-    public function getForEntity(
-        string $entityClass,
-        int|string $entityId,
-        int $limit = 0,
-    ): array;
-
-    /**
      * Get logs with filters
      *
      * @param string $entityClass Entity class (FQCN)
@@ -54,7 +45,8 @@ interface AuditStorageInterface
      * @param string|null $dateTo Date to (YYYY-MM-DD)
      * @param int<0, max> $limit Records limit (0 = all)
      * @param int<0, max> $offset Offset
-     * @param string $orderBy Sort order
+     * @param string $orderColumn One of SORTABLE_COLUMNS
+     * @param SortDirection $orderDirection Sort direction
      * @return array<int, LogEntry>
      */
     public function getWithFilters(
@@ -67,7 +59,8 @@ interface AuditStorageInterface
         ?string $dateTo = null,
         int $limit = 0,
         int $offset = 0,
-        string $orderBy = 'created_at DESC',
+        string $orderColumn = 'created_at',
+        SortDirection $orderDirection = SortDirection::Desc,
     ): array;
 
     /**

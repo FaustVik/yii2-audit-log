@@ -72,6 +72,10 @@ class User extends ActiveRecord
     'logUpdate' => true,
     'logDelete' => true,
 
+    // Сохранять все значения атрибутов при insert / delete (по умолчанию выключено)
+    'snapshotOnInsert' => false,
+    'snapshotOnDelete' => true,
+
     // Кастомный обработчик ошибок (приоритет над errorMode логгера)
     'errorHandler' => function (\Throwable $e, string $context): void {
         \Sentry\captureException($e);
@@ -199,6 +203,7 @@ $logger->logBatch([
 Используйте `AuditLogQuery` для программного доступа к данным:
 
 ```php
+use FaustVik\AuditLog\Core\Enums\SortDirection;
 use FaustVik\AuditLog\Core\Query\AuditLogQuery;
 use FaustVik\AuditLog\Core\Contracts\AuditStorageInterface;
 
@@ -206,40 +211,40 @@ $storage = Yii::createObject(AuditStorageInterface::class);
 
 // Базовый запрос
 $logs = (new AuditLogQuery($storage))
-    ->forEntity(User::class, $userId)
+    ->forEntityClass(User::class)->forEntityId($userId)
     ->limit(50)
-    ->orderBy('created_at DESC')
+    ->orderBy('created_at', SortDirection::Desc)
     ->all();
 
 // Фильтр по операции
 $updates = (new AuditLogQuery($storage))
-    ->forEntity(User::class, $userId)
+    ->forEntityClass(User::class)->forEntityId($userId)
     ->operation(\FaustVik\AuditLog\Core\Enums\Operation::Update)
     ->all();
 
 // Диапазон дат
 $recent = (new AuditLogQuery($storage))
-    ->forEntity(User::class, $userId)
+    ->forEntityClass(User::class)->forEntityId($userId)
     ->dateRange('2025-01-01', '2025-12-31')
     ->all();
 
 // По пользователю
 $adminLogs = (new AuditLogQuery($storage))
-    ->forEntity(User::class, $userId)
+    ->forEntityClass(User::class)->forEntityId($userId)
     ->userId(5)
     ->userType('admin')
     ->all();
 
 // Подсчёт без загрузки строк
 $total = (new AuditLogQuery($storage))
-    ->forEntity(User::class, $userId)
+    ->forEntityClass(User::class)->forEntityId($userId)
     ->count();
 
 // Ручная пагинация
 $page     = 3;
 $pageSize = 20;
 $logs = (new AuditLogQuery($storage))
-    ->forEntity(User::class, $userId)
+    ->forEntityClass(User::class)->forEntityId($userId)
     ->limit($pageSize)
     ->offset(($page - 1) * $pageSize)
     ->all();

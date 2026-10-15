@@ -7,10 +7,13 @@ namespace FaustVik\AuditLog\Yii2\Adapter;
 use FaustVik\AuditLog\Core\Contracts\AuditStorageInterface;
 use FaustVik\AuditLog\Core\DTO\LogEntry;
 use FaustVik\AuditLog\Core\Enums\Operation;
+use FaustVik\AuditLog\Core\Enums\SortDirection;
 use FaustVik\AuditLog\Core\Exceptions\StorageException;
 use yii\db\ActiveRecord;
+use yii\db\Connection;
 use yii\db\JsonExpression;
 use yii\db\Query;
+use yii\di\Instance;
 
 /**
  * Yii2 adapter for storing audit logs in database
@@ -23,30 +26,40 @@ final class Yii2DatabaseStorage implements AuditStorageInterface
     public string $logTableSuffix;
 
     /**
+     * @var Connection|string|array<string, mixed> DB connection, component ID or config
+     */
+    public Connection|string|array $db;
+
+    /**
      * @var array<string, string> Cache for table names resolved per entity class
      */
     private array $tableNameCache = [];
 
-    public function __construct(string $logTableSuffix = '_log')
+    /**
+     * @param Connection|string|array<string, mixed> $db DB connection, component ID or config
+     */
+    public function __construct(string $logTableSuffix = '_log', Connection|string|array $db = 'db')
     {
         $this->logTableSuffix = $logTableSuffix;
+        $this->db = $db;
+    }
+
+    private function getDb(): Connection
+    {
+        if (!$this->db instanceof Connection) {
+            $this->db = Instance::ensure($this->db, Connection::class);
+        }
+
+        return $this->db;
     }
 
     public function save(LogEntry $entry): void
     {
         $logTableName = $this->getLogTableName($entry->entityClass);
-
-        $data = $entry->toArray();
-
-        // Use JsonExpression for proper JSON storage
-        $data['changed_attributes'] = new JsonExpression($data['changed_attributes']);
-        $data['custom_data'] = new JsonExpression($data['custom_data']);
-
-        // Filter out null values
-        $data = array_filter($data, static fn ($value): bool => $value !== null);
+        $data = $this->prepareRow($entry);
 
         try {
-            \Yii::$app->db->createCommand()
+            $this->getDb()->createCommand()
                 ->insert($logTableName, $data)
                 ->execute();
         } catch (\Throwable $e) {
@@ -64,19 +77,25 @@ final class Yii2DatabaseStorage implements AuditStorageInterface
             return;
         }
 
-        $db = \Yii::$app->db;
+        // Group rows by table and column set: one multi-row INSERT per group
+        $groups = [];
+        foreach ($entries as $entry) {
+            $table = $this->getLogTableName($entry->entityClass);
+            $row = $this->prepareRow($entry);
+            $columns = array_keys($row);
+            $key = $table . '|' . implode(',', $columns);
+
+            $groups[$key]['table'] ??= $table;
+            $groups[$key]['columns'] ??= $columns;
+            $groups[$key]['rows'][] = array_values($row);
+        }
+
+        $db = $this->getDb();
         $transaction = $db->beginTransaction();
 
         try {
-            foreach ($entries as $entry) {
-                $logTableName = $this->getLogTableName($entry->entityClass);
-
-                $data = $entry->toArray();
-                $data['changed_attributes'] = new JsonExpression($data['changed_attributes']);
-                $data['custom_data'] = new JsonExpression($data['custom_data']);
-                $data = array_filter($data, static fn ($value): bool => $value !== null);
-
-                $db->createCommand()->insert($logTableName, $data)->execute();
+            foreach ($groups as $group) {
+                $db->createCommand()->batchInsert($group['table'], $group['columns'], $group['rows'])->execute();
             }
 
             $transaction->commit();
@@ -92,19 +111,17 @@ final class Yii2DatabaseStorage implements AuditStorageInterface
     }
 
     /**
-     * @return array<int, LogEntry>
-     * @deprecated Use getWithFilters() instead
+     * Convert entry to an insert row: JSON columns wrapped, nulls dropped so DB defaults apply.
+     *
+     * @return array<string, mixed>
      */
-    public function getForEntity(
-        string $entityClass,
-        int|string $entityId,
-        int $limit = 0,
-    ): array {
-        return $this->getWithFilters(
-            entityClass: $entityClass,
-            entityId: $entityId,
-            limit: $limit,
-        );
+    private function prepareRow(LogEntry $entry): array
+    {
+        $data = $entry->toArray();
+        $data['changed_attributes'] = new JsonExpression($data['changed_attributes']);
+        $data['custom_data'] = new JsonExpression($data['custom_data']);
+
+        return array_filter($data, static fn ($value): bool => $value !== null);
     }
 
     /**
@@ -120,10 +137,15 @@ final class Yii2DatabaseStorage implements AuditStorageInterface
         ?string $dateTo = null,
         int $limit = 0,
         int $offset = 0,
-        string $orderBy = 'created_at DESC',
+        string $orderColumn = 'created_at',
+        SortDirection $orderDirection = SortDirection::Desc,
     ): array {
         $query = $this->buildBaseQuery($entityClass, $entityId, $operation, $userId, $userType, $dateFrom, $dateTo);
-        $query->orderBy($this->sanitizeOrderBy($orderBy));
+        // Column is validated here too: storage may be called directly, bypassing AuditLogQuery
+        if (!in_array($orderColumn, self::SORTABLE_COLUMNS, true)) {
+            $orderColumn = 'created_at';
+        }
+        $query->orderBy([$orderColumn => $orderDirection === SortDirection::Asc ? SORT_ASC : SORT_DESC]);
 
         if ($limit > 0) {
             $query->limit($limit);
@@ -132,7 +154,7 @@ final class Yii2DatabaseStorage implements AuditStorageInterface
             $query->offset($offset);
         }
 
-        return $this->hydrateLogEntries($query->all(), $entityClass);
+        return $this->hydrateLogEntries($query->all($this->getDb()), $entityClass);
     }
 
     public function countWithFilters(
@@ -145,7 +167,7 @@ final class Yii2DatabaseStorage implements AuditStorageInterface
         ?string $dateTo = null,
     ): int {
         // @phpstan-ignore return.type (count() always returns non-negative)
-        return (int) $this->buildBaseQuery($entityClass, $entityId, $operation, $userId, $userType, $dateFrom, $dateTo)->count();
+        return (int) $this->buildBaseQuery($entityClass, $entityId, $operation, $userId, $userType, $dateFrom, $dateTo)->count('*', $this->getDb());
     }
 
     /**
@@ -277,30 +299,6 @@ final class Yii2DatabaseStorage implements AuditStorageInterface
         }
 
         return $this->tableNameCache[$entityClass] = $resolved;
-    }
-
-    /**
-     * Sanitize orderBy parameter to prevent SQL injection.
-     *
-     * Falls back to 'created_at DESC' for unrecognised column/direction.
-     * Allowed columns: id, entity_id, operation, created_at, user_id, user_type, route, module.
-     */
-    private function sanitizeOrderBy(string $orderBy): string
-    {
-        $allowed = [
-            'id', 'entity_id', 'operation', 'created_at',
-            'user_id', 'user_type', 'route', 'module',
-        ];
-
-        $parts = preg_split('/\s+/', trim($orderBy));
-        $column = $parts[0] ?? '';
-        $direction = strtoupper($parts[1] ?? 'ASC');
-
-        if (!in_array($column, $allowed, true) || !in_array($direction, ['ASC', 'DESC'], true)) {
-            return 'created_at DESC';
-        }
-
-        return $column . ' ' . $direction;
     }
 
     /**

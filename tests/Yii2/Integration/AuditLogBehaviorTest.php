@@ -393,6 +393,60 @@ final class AuditLogBehaviorTest extends TestCase
     }
 
     #[Test]
+    public function afterDeleteShouldStoreSnapshotWhenEnabled(): void
+    {
+        $owner = $this->createOwner(attributes: ['id' => 99, 'name' => 'John', 'password' => 'hash', 'note' => null], pk: 99);
+
+        $service = $this->createUpdateService();
+        $service
+            ->expects($this->once())
+            ->method('log')
+            ->with(
+                entityClass: StubActiveRecord::class,
+                entityId: 99,
+                operation: Operation::Delete,
+                changedAttributes: [
+                    'id' => ['old' => 99, 'new' => null],
+                    'name' => ['old' => 'John', 'new' => null],
+                ],
+                customData: [],
+            );
+
+        $behavior = $this->createBehavior([
+            'auditService' => $service,
+            'excludeAttributes' => ['password'],
+        ]);
+        $behavior->snapshotOnDelete = true;
+        $behavior->attach($owner);
+
+        $behavior->afterDelete();
+    }
+
+    #[Test]
+    public function afterInsertShouldStoreSnapshotWhenEnabled(): void
+    {
+        $owner = $this->createOwner(attributes: ['name' => 'John', 'created_at' => 100]);
+
+        $service = $this->createUpdateService();
+        $service
+            ->expects($this->once())
+            ->method('log')
+            ->with(
+                entityClass: StubActiveRecord::class,
+                entityId: 1,
+                operation: Operation::Insert,
+                changedAttributes: ['name' => ['old' => null, 'new' => 'John']],
+                customData: [],
+            );
+
+        $behavior = $this->createBehavior(['auditService' => $service]);
+        $behavior->snapshotOnInsert = true;
+        $behavior->attach($owner);
+
+        $behavior->afterInsert();
+    }
+
+    #[Test]
     public function afterDeleteShouldNotLogWhenDisabled(): void
     {
         $owner = $this->createOwner();

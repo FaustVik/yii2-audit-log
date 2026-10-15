@@ -7,6 +7,7 @@ namespace FaustVik\AuditLog\Tests\Core\Query;
 use FaustVik\AuditLog\Core\Contracts\AuditStorageInterface;
 use FaustVik\AuditLog\Core\DTO\LogEntry;
 use FaustVik\AuditLog\Core\Enums\Operation;
+use FaustVik\AuditLog\Core\Enums\SortDirection;
 use FaustVik\AuditLog\Core\Exceptions\AuditLogException;
 use FaustVik\AuditLog\Core\Query\AuditLogQuery;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -35,7 +36,7 @@ final class AuditLogQueryTest extends TestCase
             ->dateRange('2024-01-01', '2024-12-31')
             ->limit(10)
             ->offset(20)
-            ->orderBy('user_id ASC');
+            ->orderBy('user_id', SortDirection::Asc);
 
         $this->assertSame($query, $result);
     }
@@ -78,7 +79,8 @@ final class AuditLogQueryTest extends TestCase
                 dateTo: '2024-12-31',
                 limit: 10,
                 offset: 20,
-                orderBy: 'user_id ASC',
+                orderColumn: 'user_id',
+                orderDirection: SortDirection::Asc,
             )
             ->willReturn($expectedResults);
 
@@ -91,7 +93,7 @@ final class AuditLogQueryTest extends TestCase
             ->dateRange('2024-01-01', '2024-12-31')
             ->limit(10)
             ->offset(20)
-            ->orderBy('user_id ASC')
+            ->orderBy('user_id', SortDirection::Asc)
             ->all();
 
         $this->assertSame($expectedResults, $results);
@@ -115,7 +117,8 @@ final class AuditLogQueryTest extends TestCase
                 dateTo: null,
                 limit: 0,
                 offset: 0,
-                orderBy: 'created_at DESC',
+                orderColumn: 'created_at',
+                orderDirection: SortDirection::Desc,
             )
             ->willReturn([]);
 
@@ -177,7 +180,8 @@ final class AuditLogQueryTest extends TestCase
                 dateTo: null,
                 limit: 1,
                 offset: 0,
-                orderBy: 'created_at DESC',
+                orderColumn: 'created_at',
+                orderDirection: SortDirection::Desc,
             )
             ->willReturn([]);
 
@@ -563,14 +567,53 @@ final class AuditLogQueryTest extends TestCase
                 dateTo: null,
                 limit: 0,
                 offset: 0,
-                orderBy: 'user_id ASC',
+                orderColumn: 'user_id',
+                orderDirection: SortDirection::Asc,
             )
             ->willReturn([]);
 
         (new AuditLogQuery($storage))
             ->forEntityClass('App\Models\User')
             ->forEntityId(1)
-            ->orderBy('user_id ASC')
+            ->orderBy('user_id', SortDirection::Asc)
+            ->all();
+    }
+
+    #[Test]
+    public function orderByShouldRejectUnknownColumn(): void
+    {
+        $query = new AuditLogQuery($this->createStub(AuditStorageInterface::class));
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        $query->orderBy('created_at; DROP TABLE user_log');
+    }
+
+    #[Test]
+    public function orderByShouldDefaultToDescending(): void
+    {
+        $storage = $this->createMock(AuditStorageInterface::class);
+        $storage
+            ->expects($this->once())
+            ->method('getWithFilters')
+            ->with(
+                entityClass: 'App\Models\User',
+                entityId: null,
+                operation: null,
+                userId: null,
+                userType: null,
+                dateFrom: null,
+                dateTo: null,
+                limit: 0,
+                offset: 0,
+                orderColumn: 'id',
+                orderDirection: SortDirection::Desc,
+            )
+            ->willReturn([]);
+
+        (new AuditLogQuery($storage))
+            ->forEntityClass('App\Models\User')
+            ->orderBy('id')
             ->all();
     }
 }

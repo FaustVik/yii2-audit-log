@@ -6,6 +6,7 @@ namespace FaustVik\AuditLog\Yii2\Integration;
 
 use FaustVik\AuditLog\Core\Enums\FilterParam;
 use FaustVik\AuditLog\Core\Enums\Operation;
+use FaustVik\AuditLog\Core\Enums\SortDirection;
 use FaustVik\AuditLog\Core\Query\AuditLogQuery;
 
 /**
@@ -173,7 +174,7 @@ class AuditLogFilterWidget extends AuditLogWidget
         $query = (new AuditLogQuery($this->getStorage()))
             ->forEntityClass($this->model::class)
             ->forEntityId($entityId)
-            ->orderBy('created_at DESC');
+            ->orderBy('created_at', SortDirection::Desc);
 
         $op = $filters[FilterParam::Operation->value] ?? null;
         if ($op instanceof Operation) {

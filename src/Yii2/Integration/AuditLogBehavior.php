@@ -38,6 +38,17 @@ class AuditLogBehavior extends Behavior
     public bool $logDelete = true;
 
     /**
+     * @var bool Store all attribute values on insert as ['attr' => ['old' => null, 'new' => value]]
+     */
+    public bool $snapshotOnInsert = false;
+
+    /**
+     * @var bool Store all attribute values on delete as ['attr' => ['old' => value, 'new' => null]],
+     * so deleted data can be recovered from the log
+     */
+    public bool $snapshotOnDelete = false;
+
+    /**
      * @var AuditLoggerInterface|null Custom service (for tests)
      */
     public ?AuditLoggerInterface $auditService = null;
@@ -81,7 +92,11 @@ class AuditLogBehavior extends Behavior
     public function afterInsert(): void
     {
         if ($this->logInsert && $this->isLoggingEnabled()) {
-            $this->logOperation(operation: Operation::Insert);
+            $changedAttributes = $this->snapshotOnInsert
+                ? $this->getAuditService()->formatChangedAttributes([], $this->owner->getAttributes(), $this->excludeAttributes)
+                : [];
+
+            $this->logOperation(operation: Operation::Insert, changedAttributes: $changedAttributes);
         }
     }
 
@@ -102,7 +117,11 @@ class AuditLogBehavior extends Behavior
     public function afterDelete(): void
     {
         if ($this->logDelete && $this->isLoggingEnabled()) {
-            $this->logOperation(operation: Operation::Delete);
+            $changedAttributes = $this->snapshotOnDelete
+                ? $this->getAuditService()->formatChangedAttributes($this->owner->getAttributes(), [], $this->excludeAttributes)
+                : [];
+
+            $this->logOperation(operation: Operation::Delete, changedAttributes: $changedAttributes);
         }
     }
 
