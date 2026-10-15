@@ -40,6 +40,22 @@ final class m240101_000000_create_audit_logs extends AuditLogMultiTableMigration
 }
 ```
 
+Для нецелочисленных ключей (например, UUID) переопределите колонки:
+
+```php
+protected function getEntityIdColumn(): \yii\db\ColumnSchemaBuilder
+{
+    return $this->string(36)->notNull();
+}
+
+protected function getUserIdColumn(): \yii\db\ColumnSchemaBuilder
+{
+    return $this->string(36)->null();
+}
+```
+
+Имена индексов содержат имя лог-таблицы (`idx_user_log_created`, …), поэтому несколько лог-таблиц уживаются в одной схеме PostgreSQL.
+
 Запустите миграцию:
 
 ```bash

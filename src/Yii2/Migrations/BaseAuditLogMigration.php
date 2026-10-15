@@ -35,7 +35,7 @@ abstract class BaseAuditLogMigration extends Migration
             'entity_id' => $this->getEntityIdColumn(),
             'operation' => $this->string(10)->notNull(),
             'created_at' => $this->timestamp()->defaultExpression('CURRENT_TIMESTAMP'),
-            'user_id' => $this->integer()->null(),
+            'user_id' => $this->getUserIdColumn(),
             'user_type' => $this->string(20)->notNull()->defaultValue('system'),
             'route' => $this->string(255)->null(),
             'module' => $this->string(100)->null(),
@@ -53,23 +53,48 @@ abstract class BaseAuditLogMigration extends Migration
         return $this->integer()->notNull();
     }
 
+    /**
+     * Override for string/UUID user identifiers.
+     */
+    protected function getUserIdColumn(): ColumnSchemaBuilder
+    {
+        return $this->integer()->null();
+    }
 
     protected function createLogTableIndexes(string $logTableName): void
     {
         $this->createIndex(
-            name: 'idx_audit_entity_operation_created',
+            name: $this->getIndexName($logTableName, 'entity_operation_created'),
             table: $logTableName,
             columns: ['entity_id', 'operation', 'created_at'],
         );
         $this->createIndex(
-            name: 'idx_audit_user_created',
+            name: $this->getIndexName($logTableName, 'user_created'),
             table: $logTableName,
             columns: ['user_id', 'created_at'],
         );
         $this->createIndex(
-            name: 'idx_audit_created',
+            name: $this->getIndexName($logTableName, 'created'),
             table: $logTableName,
             columns: ['created_at'],
         );
+    }
+
+    /**
+     * Index name unique per log table (PostgreSQL index names are schema-wide).
+     *
+     * Kept within the 63-char identifier limit of PostgreSQL.
+     */
+    protected function getIndexName(string $logTableName, string $suffix): string
+    {
+        $table = (string) preg_replace('/^\{\{%(.*?)}}$/', '$1', $logTableName);
+        $table = str_replace('.', '_', $table);
+        $name = 'idx_' . $table . '_' . $suffix;
+
+        if (strlen($name) > 63) {
+            $name = substr($name, 0, 54) . '_' . substr(md5($name), 0, 8);
+        }
+
+        return $name;
     }
 }

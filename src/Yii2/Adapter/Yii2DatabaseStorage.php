@@ -178,7 +178,9 @@ final class Yii2DatabaseStorage implements AuditStorageInterface
             $query->andWhere(['>=', 'created_at', $dateFrom . ' 00:00:00']);
         }
         if ($dateTo !== null) {
-            $query->andWhere(['<=', 'created_at', $dateTo . ' 23:59:59']);
+            // Exclusive upper bound so fractional-second timestamps on the last day are included
+            $nextDay = (new \DateTimeImmutable($dateTo))->modify('+1 day')->format('Y-m-d');
+            $query->andWhere(['<', 'created_at', $nextDay . ' 00:00:00']);
         }
 
         return $query;

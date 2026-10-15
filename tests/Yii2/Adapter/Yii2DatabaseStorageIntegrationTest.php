@@ -212,6 +212,36 @@ final class Yii2DatabaseStorageIntegrationTest extends TestCase
     }
 
     #[Test]
+    public function shouldIncludeFractionalSecondsAtEndOfDateTo(): void
+    {
+        $this->db->createCommand()->insert('user_log', [
+            'entity_id' => 99,
+            'operation' => 'UPDATE',
+            'user_type' => 'system',
+            'created_at' => '2024-02-01 23:59:59.500',
+        ])->execute();
+
+        $results = $this->storage->getWithFilters('App\Models\User', entityId: 99, dateTo: '2024-02-01');
+
+        $this->assertCount(1, $results);
+    }
+
+    #[Test]
+    public function shouldExcludeStartOfNextDayFromDateTo(): void
+    {
+        $this->db->createCommand()->insert('user_log', [
+            'entity_id' => 98,
+            'operation' => 'UPDATE',
+            'user_type' => 'system',
+            'created_at' => '2024-02-02 00:00:00',
+        ])->execute();
+
+        $results = $this->storage->getWithFilters('App\Models\User', entityId: 98, dateTo: '2024-02-01');
+
+        $this->assertCount(0, $results);
+    }
+
+    #[Test]
     public function shouldFilterByDateRange(): void
     {
         $results = $this->storage->getWithFilters('App\Models\User', dateFrom: '2024-06-01', dateTo: '2024-08-31');

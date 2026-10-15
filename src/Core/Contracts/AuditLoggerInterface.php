@@ -46,6 +46,18 @@ interface AuditLoggerInterface
     public function logBatch(array $items): void;
 
     /**
+     * Build a change set from old and new attribute values.
+     *
+     * System exclude attributes configured on the logger are always skipped.
+     *
+     * @param array<string, mixed> $oldAttributes
+     * @param array<string, mixed> $newAttributes
+     * @param array<int, string> $excludeAttributes Additional attributes to skip
+     * @return array<string, array<string, mixed>> [attr => ['old' => ..., 'new' => ...]]
+     */
+    public function formatChangedAttributes(array $oldAttributes, array $newAttributes, array $excludeAttributes = []): array;
+
+    /**
      * Check if logging is enabled for an entity
      *
      * @param string $entityClass Entity class (FQCN)

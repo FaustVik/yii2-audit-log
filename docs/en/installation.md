@@ -42,6 +42,22 @@ final class m240101_000000_create_audit_logs extends AuditLogMultiTableMigration
 }
 ```
 
+For non-integer keys (e.g. UUID), override the column definitions:
+
+```php
+protected function getEntityIdColumn(): \yii\db\ColumnSchemaBuilder
+{
+    return $this->string(36)->notNull();
+}
+
+protected function getUserIdColumn(): \yii\db\ColumnSchemaBuilder
+{
+    return $this->string(36)->null();
+}
+```
+
+Index names include the log table name (`idx_user_log_created`, …), so several log tables can live in one PostgreSQL schema.
+
 Run the migration:
 
 ```bash
