@@ -7,3 +7,5 @@ rector.php              export-ignore
 phpunit.xml             export-ignore
 .gitignore              export-ignore
 docs/                   export-ignore
+.github/                export-ignore
+.gitattributes          export-ignore
