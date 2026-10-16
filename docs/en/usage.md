@@ -72,6 +72,10 @@ class User extends ActiveRecord
     'logUpdate' => true,
     'logDelete' => true,
 
+    // Store all attribute values on insert / delete (off by default)
+    'snapshotOnInsert' => false,
+    'snapshotOnDelete' => true,
+
     // Custom error handler (takes priority over the logger's errorMode)
     'errorHandler' => function (\Throwable $e, string $context): void {
         \Sentry\captureException($e);
@@ -199,6 +203,7 @@ See [Events](events.md) for `BeforeLogBatchEvent` / `AfterLogBatchEvent` usage.
 Use `AuditLogQuery` for programmatic access:
 
 ```php
+use FaustVik\AuditLog\Core\Enums\SortDirection;
 use FaustVik\AuditLog\Core\Query\AuditLogQuery;
 use FaustVik\AuditLog\Core\Contracts\AuditStorageInterface;
 
@@ -206,40 +211,40 @@ $storage = Yii::createObject(AuditStorageInterface::class);
 
 // Basic
 $logs = (new AuditLogQuery($storage))
-    ->forEntity(User::class, $userId)
+    ->forEntityClass(User::class)->forEntityId($userId)
     ->limit(50)
-    ->orderBy('created_at DESC')
+    ->orderBy('created_at', SortDirection::Desc)
     ->all();
 
 // Filter by operation
 $updates = (new AuditLogQuery($storage))
-    ->forEntity(User::class, $userId)
+    ->forEntityClass(User::class)->forEntityId($userId)
     ->operation(\FaustVik\AuditLog\Core\Enums\Operation::Update)
     ->all();
 
 // Date range
 $recent = (new AuditLogQuery($storage))
-    ->forEntity(User::class, $userId)
+    ->forEntityClass(User::class)->forEntityId($userId)
     ->dateRange('2025-01-01', '2025-12-31')
     ->all();
 
 // By user
 $adminLogs = (new AuditLogQuery($storage))
-    ->forEntity(User::class, $userId)
+    ->forEntityClass(User::class)->forEntityId($userId)
     ->userId(5)
     ->userType('admin')
     ->all();
 
 // Count without fetching rows
 $total = (new AuditLogQuery($storage))
-    ->forEntity(User::class, $userId)
+    ->forEntityClass(User::class)->forEntityId($userId)
     ->count();
 
 // Manual pagination
 $page     = 3;
 $pageSize = 20;
 $logs = (new AuditLogQuery($storage))
-    ->forEntity(User::class, $userId)
+    ->forEntityClass(User::class)->forEntityId($userId)
     ->limit($pageSize)
     ->offset(($page - 1) * $pageSize)
     ->all();
@@ -275,6 +280,33 @@ foreach ($logs as $log) {
 ```
 
 ---
+
+## Limitations
+
+The behavior listens to ActiveRecord events, so only changes made through a model instance (`save()`, `insert()`, `update()`, `delete()`) are logged.
+
+Not logged:
+
+- `Model::updateAll()`, `Model::deleteAll()`, `Model::updateAllCounters()`
+- `$model->updateAttributes()` and `$model->updateCounters()` (no `afterSave` event)
+- raw SQL via `Yii::$app->db->createCommand()`
+
+For bulk operations, log the changes yourself with `logBatch()` (see [Batch Logging](#batch-logging)):
+
+```php
+$ids = User::find()->select('id')->where(['status' => 'inactive'])->column();
+User::updateAll(['status' => 'banned'], ['id' => $ids]);
+
+Yii::createObject(AuditLoggerInterface::class)->logBatch(array_map(
+    fn ($id) => [
+        'entityClass' => User::class,
+        'entityId' => $id,
+        'operation' => Operation::Update,
+        'changedAttributes' => ['status' => ['old' => 'inactive', 'new' => 'banned']],
+    ],
+    $ids,
+));
+```
 
 ## Next Steps
 

@@ -5,13 +5,17 @@ declare(strict_types=1);
 namespace FaustVik\AuditLog\Tests\Yii2\Integration;
 
 use FaustVik\AuditLog\Core\Contracts\AuditLoggerInterface;
+use FaustVik\AuditLog\Core\Contracts\AuditStorageInterface;
+use FaustVik\AuditLog\Core\Contracts\ContextProviderInterface;
 use FaustVik\AuditLog\Core\Enums\Operation;
 use FaustVik\AuditLog\Core\Exceptions\InvalidOwnerException;
+use FaustVik\AuditLog\Core\Services\AuditLogger;
 use FaustVik\AuditLog\Tests\Stubs\StubActiveRecord;
 use FaustVik\AuditLog\Yii2\Integration\AuditLogBehavior;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use yii\db\AfterSaveEvent;
 
 #[CoversClass(AuditLogBehavior::class)]
 final class AuditLogBehaviorTest extends TestCase
@@ -97,12 +101,11 @@ final class AuditLogBehaviorTest extends TestCase
 
         $events = $behavior->events();
 
-        $this->assertCount(4, $events);
-        $this->assertArrayHasKey(\yii\db\ActiveRecord::EVENT_BEFORE_UPDATE, $events);
+        $this->assertCount(3, $events);
+        $this->assertArrayNotHasKey(\yii\db\ActiveRecord::EVENT_BEFORE_UPDATE, $events);
         $this->assertArrayHasKey(\yii\db\ActiveRecord::EVENT_AFTER_INSERT, $events);
         $this->assertArrayHasKey(\yii\db\ActiveRecord::EVENT_AFTER_UPDATE, $events);
         $this->assertArrayHasKey(\yii\db\ActiveRecord::EVENT_AFTER_DELETE, $events);
-        $this->assertSame('beforeUpdate', $events[\yii\db\ActiveRecord::EVENT_BEFORE_UPDATE]);
         $this->assertSame('afterInsert', $events[\yii\db\ActiveRecord::EVENT_AFTER_INSERT]);
         $this->assertSame('afterUpdate', $events[\yii\db\ActiveRecord::EVENT_AFTER_UPDATE]);
         $this->assertSame('afterDelete', $events[\yii\db\ActiveRecord::EVENT_AFTER_DELETE]);
@@ -187,49 +190,37 @@ final class AuditLogBehaviorTest extends TestCase
     }
 
     // ============================================================
-    // Group D: beforeUpdate + afterUpdate
+    // Group D: afterUpdate
     // ============================================================
 
-    #[Test]
-    public function beforeUpdateShouldCaptureOldAttributes(): void
+    /**
+     * Mock service whose formatChangedAttributes() delegates to the real core implementation.
+     */
+    private function createUpdateService(): AuditLoggerInterface&\PHPUnit\Framework\MockObject\MockObject
     {
-        $oldAttributes = ['name' => 'John', 'email' => 'john@test.com'];
-        $owner = $this->createOwner(attributes: [], oldAttributes: $oldAttributes);
+        $core = new AuditLogger(
+            storage: $this->createStub(AuditStorageInterface::class),
+            contextProvider: $this->createStub(ContextProviderInterface::class),
+        );
 
         $service = $this->createMock(AuditLoggerInterface::class);
-        $service
-            ->method('isEnabledForEntity')
-            ->willReturn(true);
+        $service->method('isEnabledForEntity')->willReturn(true);
+        $service->method('formatChangedAttributes')->willReturnCallback($core->formatChangedAttributes(...));
 
-        $behavior = $this->createBehavior([
-            'auditService' => $service,
-            'logUpdate' => true,
-        ]);
-        $behavior->attach($owner);
+        return $service;
+    }
 
-        $behavior->beforeUpdate();
-
-        // Verify via reflection that _oldAttributes was captured
-        $reflection = new \ReflectionClass($behavior);
-        $prop = $reflection->getProperty('_oldAttributes');
-        $prop->setAccessible(true);
-        $capturedOldAttributes = $prop->getValue($behavior);
-
-        $this->assertSame($oldAttributes, $capturedOldAttributes);
+    private function createAfterSaveEvent(array $changedAttributes): AfterSaveEvent
+    {
+        return new AfterSaveEvent(['changedAttributes' => $changedAttributes]);
     }
 
     #[Test]
     public function afterUpdateShouldLogChangedAttributes(): void
     {
-        $oldAttributes = ['name' => 'John', 'email' => 'john@test.com'];
-        $newAttributes = ['name' => 'Jane', 'email' => 'john@test.com'];
-        $owner = $this->createOwner(attributes: $newAttributes, oldAttributes: $oldAttributes);
+        $owner = $this->createOwner(attributes: ['name' => 'Jane', 'email' => 'john@test.com']);
 
-        $service = $this->createMock(AuditLoggerInterface::class);
-        $service
-            ->method('isEnabledForEntity')
-            ->willReturn(true);
-
+        $service = $this->createUpdateService();
         $service
             ->expects($this->once())
             ->method('log')
@@ -241,28 +232,18 @@ final class AuditLogBehaviorTest extends TestCase
                 customData: [],
             );
 
-        $behavior = $this->createBehavior([
-            'auditService' => $service,
-            'logUpdate' => true,
-        ]);
+        $behavior = $this->createBehavior(['auditService' => $service]);
         $behavior->attach($owner);
 
-        $behavior->beforeUpdate();
-        $behavior->afterUpdate(new \yii\db\AfterSaveEvent());
+        $behavior->afterUpdate($this->createAfterSaveEvent(['name' => 'John']));
     }
 
     #[Test]
     public function afterUpdateShouldExcludeAttributes(): void
     {
-        $oldAttributes = ['name' => 'John', 'password' => 'old_hash'];
-        $newAttributes = ['name' => 'Jane', 'password' => 'new_hash'];
-        $owner = $this->createOwner(attributes: $newAttributes, oldAttributes: $oldAttributes);
+        $owner = $this->createOwner(attributes: ['name' => 'Jane', 'password' => 'new_hash']);
 
-        $service = $this->createMock(AuditLoggerInterface::class);
-        $service
-            ->method('isEnabledForEntity')
-            ->willReturn(true);
-
+        $service = $this->createUpdateService();
         $service
             ->expects($this->once())
             ->method('log')
@@ -276,50 +257,48 @@ final class AuditLogBehaviorTest extends TestCase
 
         $behavior = $this->createBehavior([
             'auditService' => $service,
-            'logUpdate' => true,
             'excludeAttributes' => ['password'],
         ]);
         $behavior->attach($owner);
 
-        $behavior->beforeUpdate();
-        $behavior->afterUpdate(new \yii\db\AfterSaveEvent());
+        $behavior->afterUpdate($this->createAfterSaveEvent(['name' => 'John', 'password' => 'old_hash']));
     }
 
     #[Test]
     public function afterUpdateShouldNotLogWhenNoChanges(): void
     {
-        $attributes = ['name' => 'John'];
-        $owner = $this->createOwner(attributes: $attributes, oldAttributes: $attributes);
+        $owner = $this->createOwner(attributes: ['name' => 'John']);
 
-        $service = $this->createMock(AuditLoggerInterface::class);
-        $service
-            ->method('isEnabledForEntity')
-            ->willReturn(true);
+        $service = $this->createUpdateService();
+        $service->expects($this->never())->method('log');
 
-        $service
-            ->expects($this->never())
-            ->method('log');
-
-        $behavior = $this->createBehavior([
-            'auditService' => $service,
-            'logUpdate' => true,
-        ]);
+        $behavior = $this->createBehavior(['auditService' => $service]);
         $behavior->attach($owner);
 
-        $behavior->beforeUpdate();
-        $behavior->afterUpdate(new \yii\db\AfterSaveEvent());
+        $behavior->afterUpdate($this->createAfterSaveEvent([]));
     }
 
     #[Test]
-    public function afterUpdateShouldExcludeSystemAttributes(): void
+    public function afterUpdateShouldNotLogTypeOnlyDifferences(): void
     {
-        $oldAttributes = ['name' => 'John', 'updated_at' => 100, 'created_at' => 50];
-        $newAttributes = ['name' => 'Jane', 'updated_at' => 200, 'created_at' => 50];
-        $owner = $this->createOwner(attributes: $newAttributes, oldAttributes: $oldAttributes);
+        // DB loaded "5", form set int 5: Yii marks it dirty, but the value did not change
+        $owner = $this->createOwner(attributes: ['status' => 5, 'name' => 'John']);
 
-        $service = $this->createMock(AuditLoggerInterface::class);
-        $service->method('isEnabledForEntity')->willReturn(true);
+        $service = $this->createUpdateService();
+        $service->expects($this->never())->method('log');
 
+        $behavior = $this->createBehavior(['auditService' => $service]);
+        $behavior->attach($owner);
+
+        $behavior->afterUpdate($this->createAfterSaveEvent(['status' => '5']));
+    }
+
+    #[Test]
+    public function afterUpdateShouldExcludeSystemAttributesFromLogger(): void
+    {
+        $owner = $this->createOwner(attributes: ['name' => 'Jane', 'updated_at' => 200]);
+
+        $service = $this->createUpdateService();
         $service
             ->expects($this->once())
             ->method('log')
@@ -331,11 +310,33 @@ final class AuditLogBehaviorTest extends TestCase
                 customData: [],
             );
 
-        $behavior = $this->createBehavior(['auditService' => $service, 'logUpdate' => true]);
+        $behavior = $this->createBehavior(['auditService' => $service]);
         $behavior->attach($owner);
 
-        $behavior->beforeUpdate();
-        $behavior->afterUpdate(new \yii\db\AfterSaveEvent());
+        $behavior->afterUpdate($this->createAfterSaveEvent(['name' => 'John', 'updated_at' => 100]));
+    }
+
+    #[Test]
+    public function afterUpdateShouldPassBehaviorExcludesToService(): void
+    {
+        $owner = $this->createOwner(attributes: ['name' => 'Jane']);
+
+        $service = $this->createMock(AuditLoggerInterface::class);
+        $service->method('isEnabledForEntity')->willReturn(true);
+        $service
+            ->expects($this->once())
+            ->method('formatChangedAttributes')
+            ->with(['name' => 'John'], ['name' => 'Jane'], ['secret'])
+            ->willReturn([]);
+        $service->expects($this->never())->method('log');
+
+        $behavior = $this->createBehavior([
+            'auditService' => $service,
+            'excludeAttributes' => ['secret'],
+        ]);
+        $behavior->attach($owner);
+
+        $behavior->afterUpdate($this->createAfterSaveEvent(['name' => 'John']));
     }
 
     #[Test]
@@ -354,7 +355,7 @@ final class AuditLogBehaviorTest extends TestCase
         ]);
         $behavior->attach($owner);
 
-        $behavior->afterUpdate(new \yii\db\AfterSaveEvent());
+        $behavior->afterUpdate($this->createAfterSaveEvent(['name' => 'John']));
     }
 
     // ============================================================
@@ -389,6 +390,60 @@ final class AuditLogBehaviorTest extends TestCase
         $behavior->attach($owner);
 
         $behavior->afterDelete();
+    }
+
+    #[Test]
+    public function afterDeleteShouldStoreSnapshotWhenEnabled(): void
+    {
+        $owner = $this->createOwner(attributes: ['id' => 99, 'name' => 'John', 'password' => 'hash', 'note' => null], pk: 99);
+
+        $service = $this->createUpdateService();
+        $service
+            ->expects($this->once())
+            ->method('log')
+            ->with(
+                entityClass: StubActiveRecord::class,
+                entityId: 99,
+                operation: Operation::Delete,
+                changedAttributes: [
+                    'id' => ['old' => 99, 'new' => null],
+                    'name' => ['old' => 'John', 'new' => null],
+                ],
+                customData: [],
+            );
+
+        $behavior = $this->createBehavior([
+            'auditService' => $service,
+            'excludeAttributes' => ['password'],
+        ]);
+        $behavior->snapshotOnDelete = true;
+        $behavior->attach($owner);
+
+        $behavior->afterDelete();
+    }
+
+    #[Test]
+    public function afterInsertShouldStoreSnapshotWhenEnabled(): void
+    {
+        $owner = $this->createOwner(attributes: ['name' => 'John', 'created_at' => 100]);
+
+        $service = $this->createUpdateService();
+        $service
+            ->expects($this->once())
+            ->method('log')
+            ->with(
+                entityClass: StubActiveRecord::class,
+                entityId: 1,
+                operation: Operation::Insert,
+                changedAttributes: ['name' => ['old' => null, 'new' => 'John']],
+                customData: [],
+            );
+
+        $behavior = $this->createBehavior(['auditService' => $service]);
+        $behavior->snapshotOnInsert = true;
+        $behavior->attach($owner);
+
+        $behavior->afterInsert();
     }
 
     #[Test]

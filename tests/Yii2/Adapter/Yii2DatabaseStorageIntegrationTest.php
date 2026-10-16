@@ -6,6 +6,7 @@ namespace FaustVik\AuditLog\Tests\Yii2\Adapter;
 
 use FaustVik\AuditLog\Core\DTO\LogEntry;
 use FaustVik\AuditLog\Core\Enums\Operation;
+use FaustVik\AuditLog\Core\Enums\SortDirection;
 use FaustVik\AuditLog\Yii2\Adapter\Yii2DatabaseStorage;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
@@ -29,6 +30,20 @@ final class Yii2DatabaseStorageIntegrationTest extends TestCase
         $this->db = new Connection([
             'pdo' => $pdo,
             'enableSchemaCache' => false,
+        ]);
+
+        // SQLite has no native JsonExpression builder; store JSON as text like MySQL/PG would
+        $this->db->getQueryBuilder()->setExpressionBuilders([
+            \yii\db\JsonExpression::class => new class () implements \yii\db\ExpressionBuilderInterface {
+                public function build(\yii\db\ExpressionInterface $expression, array &$params = []): string
+                {
+                    /** @var \yii\db\JsonExpression $expression */
+                    $placeholder = \yii\db\QueryBuilder::PARAM_PREFIX . count($params);
+                    $params[$placeholder] = json_encode($expression->getValue());
+
+                    return $placeholder;
+                }
+            },
         ]);
 
         // Initialize Yii::$app with correct stub
@@ -70,7 +85,7 @@ final class Yii2DatabaseStorageIntegrationTest extends TestCase
         // Insert test data
         $this->seedTestData();
 
-        $this->storage = new Yii2DatabaseStorage('_log');
+        $this->storage = new Yii2DatabaseStorage('_log', $this->db);
     }
 
     protected function tearDown(): void
@@ -212,6 +227,36 @@ final class Yii2DatabaseStorageIntegrationTest extends TestCase
     }
 
     #[Test]
+    public function shouldIncludeFractionalSecondsAtEndOfDateTo(): void
+    {
+        $this->db->createCommand()->insert('user_log', [
+            'entity_id' => 99,
+            'operation' => 'UPDATE',
+            'user_type' => 'system',
+            'created_at' => '2024-02-01 23:59:59.500',
+        ])->execute();
+
+        $results = $this->storage->getWithFilters('App\Models\User', entityId: 99, dateTo: '2024-02-01');
+
+        $this->assertCount(1, $results);
+    }
+
+    #[Test]
+    public function shouldExcludeStartOfNextDayFromDateTo(): void
+    {
+        $this->db->createCommand()->insert('user_log', [
+            'entity_id' => 98,
+            'operation' => 'UPDATE',
+            'user_type' => 'system',
+            'created_at' => '2024-02-02 00:00:00',
+        ])->execute();
+
+        $results = $this->storage->getWithFilters('App\Models\User', entityId: 98, dateTo: '2024-02-01');
+
+        $this->assertCount(0, $results);
+    }
+
+    #[Test]
     public function shouldFilterByDateRange(): void
     {
         $results = $this->storage->getWithFilters('App\Models\User', dateFrom: '2024-06-01', dateTo: '2024-08-31');
@@ -253,7 +298,7 @@ final class Yii2DatabaseStorageIntegrationTest extends TestCase
     #[Test]
     public function shouldApplyOrderBy(): void
     {
-        $results = $this->storage->getWithFilters('App\Models\User', orderBy: 'user_id ASC');
+        $results = $this->storage->getWithFilters('App\Models\User', orderColumn: 'user_id', orderDirection: SortDirection::Asc);
 
         $prevUserId = null;
         foreach ($results as $entry) {
@@ -267,8 +312,8 @@ final class Yii2DatabaseStorageIntegrationTest extends TestCase
     #[Test]
     public function shouldCombineLimitAndOffset(): void
     {
-        $allResults = $this->storage->getWithFilters('App\Models\User', orderBy: 'created_at DESC');
-        $limitedResults = $this->storage->getWithFilters('App\Models\User', offset: 2, limit: 3, orderBy: 'created_at DESC');
+        $allResults = $this->storage->getWithFilters('App\Models\User', orderColumn: 'created_at', orderDirection: SortDirection::Desc);
+        $limitedResults = $this->storage->getWithFilters('App\Models\User', offset: 2, limit: 3, orderColumn: 'created_at', orderDirection: SortDirection::Desc);
 
         $this->assertCount(3, $limitedResults);
         for ($i = 0; $i < 3; $i++) {
@@ -313,10 +358,86 @@ final class Yii2DatabaseStorageIntegrationTest extends TestCase
     // Group E: JSON encoding/decoding
     // ============================================================
 
+    private function makeEntry(string $entityClass, int $entityId, ?string $createdAt = null, ?int $userId = null): LogEntry
+    {
+        return new LogEntry(
+            entityClass: $entityClass,
+            entityId: $entityId,
+            operation: Operation::Insert,
+            userId: $userId,
+            userType: 'system',
+            route: null,
+            module: null,
+            ipAddress: null,
+            userAgent: null,
+            createdAt: $createdAt,
+            changedAttributes: ['name' => ['old' => null, 'new' => 'X' . $entityId]],
+        );
+    }
+
+    #[Test]
+    public function saveBatchShouldInsertRowsWithDifferentColumnSets(): void
+    {
+        $this->storage->saveBatch([
+            $this->makeEntry('App\Models\User', 100, '2030-01-01 00:00:00', 7),
+            $this->makeEntry('App\Models\User', 101),
+            $this->makeEntry('App\Models\User', 102, '2030-01-02 00:00:00'),
+        ]);
+
+        $rows = $this->db->createCommand('SELECT entity_id, user_id, created_at FROM user_log WHERE entity_id >= 100 ORDER BY entity_id')->queryAll();
+
+        $this->assertCount(3, $rows);
+        $this->assertSame('2030-01-01 00:00:00', $rows[0]['created_at']);
+        $this->assertEquals(7, $rows[0]['user_id']);
+        // Null created_at is dropped from the insert, so the DB default fills it
+        $this->assertNotNull($rows[1]['created_at']);
+
+        $entries = $this->storage->getWithFilters('App\Models\User', entityId: 101);
+        $this->assertSame(['name' => ['old' => null, 'new' => 'X101']], $entries[0]->changedAttributes);
+    }
+
+    #[Test]
+    public function saveBatchShouldRollBackAllRowsOnFailure(): void
+    {
+        try {
+            $this->storage->saveBatch([
+                $this->makeEntry('App\Models\User', 200),
+                $this->makeEntry('App\Models\MissingTable', 201),
+            ]);
+            $this->fail('Expected StorageException');
+        } catch (\FaustVik\AuditLog\Core\Exceptions\StorageException) {
+        }
+
+        $this->assertSame(0, $this->storage->countWithFilters('App\Models\User', entityId: 200));
+    }
+
+    #[Test]
+    public function shouldIgnoreUnknownOrderColumn(): void
+    {
+        $results = $this->storage->getWithFilters('App\Models\User', orderColumn: 'id; DROP TABLE user_log');
+
+        $this->assertCount(10, $results);
+    }
+
+    #[Test]
+    public function shouldResolveConnectionFromConfig(): void
+    {
+        $storage = new Yii2DatabaseStorage('_log', ['class' => \yii\db\Connection::class, 'dsn' => 'sqlite::memory:']);
+        $storage->db = $this->db;
+
+        $this->assertSame(10, $storage->countWithFilters('App\Models\User'));
+
+        $fromConfig = new Yii2DatabaseStorage('_log', ['class' => \yii\db\Connection::class, 'dsn' => 'sqlite::memory:']);
+        $fromConfig->getLogTableName('App\Models\User');
+        $reflection = new \ReflectionMethod($fromConfig, 'getDb');
+        $this->assertInstanceOf(\yii\db\Connection::class, $reflection->invoke($fromConfig));
+        $this->assertNotSame($this->db, $reflection->invoke($fromConfig));
+    }
+
     #[Test]
     public function shouldEncodeAndDecodeJsonFields(): void
     {
-        $results = $this->storage->getWithFilters('App\Models\User', entityId: 1, orderBy: 'created_at ASC');
+        $results = $this->storage->getWithFilters('App\Models\User', entityId: 1, orderColumn: 'created_at', orderDirection: SortDirection::Asc);
 
         $this->assertNotEmpty($results);
         $firstEntry = $results[0];

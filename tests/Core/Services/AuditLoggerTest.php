@@ -781,6 +781,40 @@ final class AuditLoggerTest extends TestCase
         $this->assertNull($changes['nickname']['new']);
     }
 
+    #[Test]
+    public function formatChangedAttributesShouldIgnoreScalarTypeDifferences(): void
+    {
+        $logger = new AuditLogger(
+            storage: $this->createMock(AuditStorageInterface::class),
+            contextProvider: $this->createMock(ContextProviderInterface::class),
+            systemExcludeAttributes: [],
+        );
+
+        $changes = $logger->formatChangedAttributes(
+            ['status' => '5', 'price' => '10.5', 'flag' => '1'],
+            ['status' => 5, 'price' => 10.5, 'flag' => true],
+        );
+
+        $this->assertSame([], $changes);
+    }
+
+    #[Test]
+    public function formatChangedAttributesShouldTreatNullAsDistinctFromEmpty(): void
+    {
+        $logger = new AuditLogger(
+            storage: $this->createMock(AuditStorageInterface::class),
+            contextProvider: $this->createMock(ContextProviderInterface::class),
+            systemExcludeAttributes: [],
+        );
+
+        $changes = $logger->formatChangedAttributes(
+            ['a' => null, 'b' => 0],
+            ['a' => '', 'b' => null],
+        );
+
+        $this->assertSame(['a' => ['old' => null, 'new' => ''], 'b' => ['old' => 0, 'new' => null]], $changes);
+    }
+
     // ============================================================
     // Group C: isEnabledForEntity() — unit tests
     // ============================================================

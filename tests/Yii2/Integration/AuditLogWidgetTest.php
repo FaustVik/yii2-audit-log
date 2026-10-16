@@ -8,6 +8,7 @@ use FaustVik\AuditLog\Core\Contracts\AuditStorageInterface;
 use FaustVik\AuditLog\Core\DTO\LogEntry;
 use FaustVik\AuditLog\Core\Enums\DisplayMode;
 use FaustVik\AuditLog\Core\Enums\Operation;
+use FaustVik\AuditLog\Core\Enums\SortDirection;
 use FaustVik\AuditLog\Tests\Stubs\StubActiveRecord;
 use FaustVik\AuditLog\Yii2\Integration\AuditLogWidget;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -127,7 +128,8 @@ final class AuditLogWidgetTest extends TestCase
                 ?string $dateTo,
                 int $limit,
                 int $offset,
-                string $orderBy,
+                string $orderColumn,
+                SortDirection $orderDirection,
             ) use (&$capturedLimit) {
                 $capturedLimit = $limit;
                 return [];

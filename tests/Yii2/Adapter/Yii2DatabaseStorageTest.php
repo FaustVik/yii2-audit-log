@@ -69,12 +69,7 @@ final class Yii2DatabaseStorageTest extends TestCase
             ->method('createCommand')
             ->willReturn($command);
 
-        // Set Yii::$app
-        $app = new \stdClass();
-        $app->db = $db;
-        \Yii::$app = $app;
-
-        $storage = new Yii2DatabaseStorage('_log');
+        $storage = new Yii2DatabaseStorage('_log', $db);
         $storage->save($entry);
 
         // Verify table name
@@ -131,11 +126,7 @@ final class Yii2DatabaseStorageTest extends TestCase
             ->method('createCommand')
             ->willReturn($command);
 
-        $app = new \stdClass();
-        $app->db = $db;
-        \Yii::$app = $app;
-
-        $storage = new Yii2DatabaseStorage('_log');
+        $storage = new Yii2DatabaseStorage('_log', $db);
         $storage->save($entry);
 
         // Null values should be filtered out
@@ -186,16 +177,49 @@ final class Yii2DatabaseStorageTest extends TestCase
             ->method('createCommand')
             ->willReturn($command);
 
-        $app = new \stdClass();
-        $app->db = $db;
-        \Yii::$app = $app;
-
-        $storage = new Yii2DatabaseStorage('_log');
+        $storage = new Yii2DatabaseStorage('_log', $db);
 
         $this->expectException(StorageException::class);
         $this->expectExceptionMessage('Failed to save audit log: Database connection failed');
 
         $storage->save($entry);
+    }
+
+    #[Test]
+    public function saveShouldNotMangleSqlStateStringCode(): void
+    {
+        $pdoException = new \PDOException('SQLSTATE[42S02]: Base table or view not found');
+        // PDOException::$code is protected and holds the SQLSTATE string
+        (new \ReflectionProperty(\Exception::class, 'code'))->setValue($pdoException, '42S02');
+
+        $command = $this->createMock(Command::class);
+        $command->method('insert')->willReturnSelf();
+        $command->method('execute')->willThrowException($pdoException);
+
+        $db = $this->createMock(Connection::class);
+        $db->method('createCommand')->willReturn($command);
+
+        $storage = new Yii2DatabaseStorage('_log', $db);
+
+        try {
+            $storage->save(new LogEntry(
+                entityClass: 'App\Models\User',
+                entityId: 1,
+                operation: Operation::Insert,
+                userId: null,
+                userType: 'system',
+                route: null,
+                module: null,
+                ipAddress: null,
+                userAgent: null,
+                createdAt: null,
+            ));
+            $this->fail('Expected StorageException');
+        } catch (StorageException $e) {
+            $this->assertSame(0, $e->getCode());
+            $this->assertSame('42S02', $e->getPrevious()?->getCode());
+            $this->assertStringContainsString('42S02', $e->getMessage());
+        }
     }
 
     #[Test]
@@ -236,11 +260,7 @@ final class Yii2DatabaseStorageTest extends TestCase
             ->method('createCommand')
             ->willReturn($command);
 
-        $app = new \stdClass();
-        $app->db = $db;
-        \Yii::$app = $app;
-
-        $storage = new Yii2DatabaseStorage('_log');
+        $storage = new Yii2DatabaseStorage('_log', $db);
 
         try {
             $storage->save($entry);
@@ -331,55 +351,6 @@ final class Yii2DatabaseStorageTest extends TestCase
             'no suffix' => ['', 'test_entity'],
             'underscore suffix' => ['_', 'test_entity_'],
         ];
-    }
-
-    // ============================================================
-    // Tests for deprecated getForEntity() method
-    // ============================================================
-
-    #[Test]
-    public function getForEntityShouldDelegateToGetWithFilters(): void
-    {
-        // getForEntity() is just a wrapper over getWithFilters()
-        // Verify method exists and calls getWithFilters with correct params
-
-        $entry = new LogEntry(
-            entityClass: 'App\Models\User',
-            entityId: 42,
-            operation: Operation::Insert,
-            userId: 1,
-            userType: 'admin',
-            route: null,
-            module: null,
-            ipAddress: null,
-            userAgent: null,
-            createdAt: '2024-01-01 12:00:00',
-        );
-
-        $command = $this->createMock(Command::class);
-        $command
-            ->method('execute')
-            ->willReturn(1);
-
-        $db = $this->createMock(Connection::class);
-        $db
-            ->method('createCommand')
-            ->willReturn($command);
-
-        $app = new \stdClass();
-        $app->db = $db;
-        \Yii::$app = $app;
-
-        $storage = new Yii2DatabaseStorage('_log');
-
-        // getForEntity() should exist and be callable
-        $this->assertTrue(method_exists($storage, 'getForEntity'));
-
-        // But real work needs Query — test signature only
-        $reflection = new \ReflectionMethod($storage, 'getForEntity');
-        $this->assertSame('entityClass', $reflection->getParameters()[0]->getName());
-        $this->assertSame('entityId', $reflection->getParameters()[1]->getName());
-        $this->assertSame('limit', $reflection->getParameters()[2]->getName());
     }
 
     // ============================================================

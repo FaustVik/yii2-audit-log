@@ -221,7 +221,7 @@ class AuditLogger implements AuditLoggerInterface
             $oldValue = $oldAttributes[$attribute] ?? null;
             $newValue = $newAttributes[$attribute] ?? null;
 
-            if ($oldValue !== $newValue) {
+            if ($this->valuesDiffer($oldValue, $newValue)) {
                 $changes[$attribute] = [
                     'old' => $oldValue,
                     'new' => $newValue,
@@ -230,6 +230,23 @@ class AuditLogger implements AuditLoggerInterface
         }
 
         return $changes;
+    }
+
+    /**
+     * Compare values the way a DB round-trip sees them: scalars are compared
+     * by their string form, so "5" and 5 are not reported as a change.
+     */
+    private function valuesDiffer(mixed $oldValue, mixed $newValue): bool
+    {
+        if ($oldValue === null || $newValue === null) {
+            return $oldValue !== $newValue;
+        }
+
+        if (is_scalar($oldValue) && is_scalar($newValue)) {
+            return (string) $oldValue !== (string) $newValue;
+        }
+
+        return $oldValue !== $newValue;
     }
 
     /**

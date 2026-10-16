@@ -59,8 +59,7 @@ final class Yii2AuditLogger implements AuditLoggerInterface
     private ?ExpressionResolver $resolver = null;
 
     /**
-     * @var AuditLogger|null Internal logger override (for testing)
-     * @phpstan-ignore property.unusedType
+     * @var AuditLogger|null Lazily built core logger (can be injected in tests)
      */
     private ?AuditLogger $auditLogger = null;
 
@@ -108,11 +107,8 @@ final class Yii2AuditLogger implements AuditLoggerInterface
      */
     private function getLogger(): AuditLogger
     {
-        if ($this->auditLogger !== null) {
-            return $this->auditLogger;
-        }
-
-        return new AuditLogger(
+        // Built once: configuration is expected to be final by the first log call
+        return $this->auditLogger ??= new AuditLogger(
             storage: $this->storage,
             contextProvider: $this->contextProvider,
             eventDispatcher: $this->eventDispatcher,

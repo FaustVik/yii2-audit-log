@@ -138,6 +138,8 @@ class CustomContextProvider implements ContextProviderInterface
 'storage' => [
     'class' => \FaustVik\AuditLog\Yii2\Adapter\Yii2DatabaseStorage::class,
     'logTableSuffix' => '_log',
+    // Подключение: ID компонента, экземпляр Connection или конфиг (по умолчанию 'db')
+    'db' => 'auditDb',
 ],
 ```
 

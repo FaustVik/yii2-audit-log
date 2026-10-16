@@ -140,6 +140,8 @@ Configure how logs are stored:
 'storage' => [
     'class' => \FaustVik\AuditLog\Yii2\Adapter\Yii2DatabaseStorage::class,
     'logTableSuffix' => '_log',
+    // Connection: component ID, Connection instance or config (default: 'db')
+    'db' => 'auditDb',
 ],
 ```
 

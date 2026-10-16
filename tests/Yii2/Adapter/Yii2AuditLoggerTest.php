@@ -110,6 +110,19 @@ final class Yii2AuditLoggerTest extends TestCase
     }
 
     #[Test]
+    public function getLoggerShouldBuildCoreLoggerOnlyOnce(): void
+    {
+        $logger = $this->createLoggerWithMockAuditLogger();
+
+        $logger->isEnabledForEntity('App\Models\User');
+        $first = $this->getPrivateProperty($logger, 'auditLogger');
+        $logger->isEnabledForEntity('App\Models\Order');
+
+        $this->assertInstanceOf(\FaustVik\AuditLog\Core\Services\AuditLogger::class, $first);
+        $this->assertSame($first, $this->getPrivateProperty($logger, 'auditLogger'));
+    }
+
+    #[Test]
     public function getLoggerShouldCreateAuditLoggerOnFirstCall(): void
     {
         $logger = $this->createLoggerWithMockAuditLogger();

@@ -26,11 +26,6 @@ class AuditLogBehavior extends Behavior
     public array $excludeAttributes = [];
 
     /**
-     * @var array<int, string> System attributes always excluded from change diffs
-     */
-    public array $systemExcludeAttributes = ['created_at', 'updated_at', 'date_created', 'date_updated'];
-
-    /**
      * @var array<string, callable(ActiveRecord): mixed|string> Custom fields for logging.
      * Callable receives the model as first argument.
      */
@@ -43,6 +38,17 @@ class AuditLogBehavior extends Behavior
     public bool $logDelete = true;
 
     /**
+     * @var bool Store all attribute values on insert as ['attr' => ['old' => null, 'new' => value]]
+     */
+    public bool $snapshotOnInsert = false;
+
+    /**
+     * @var bool Store all attribute values on delete as ['attr' => ['old' => value, 'new' => null]],
+     * so deleted data can be recovered from the log
+     */
+    public bool $snapshotOnDelete = false;
+
+    /**
      * @var AuditLoggerInterface|null Custom service (for tests)
      */
     public ?AuditLoggerInterface $auditService = null;
@@ -52,11 +58,6 @@ class AuditLogBehavior extends Behavior
      * If set, takes priority over the logger's errorMode/errorHandler
      */
     public $errorHandler = null;
-
-    /**
-     * @var array<string, mixed> Old attributes before update
-     */
-    private array $_oldAttributes = [];
 
     /**
      * @var AuditLoggerInterface|null Resolved service instance (cached per request)
@@ -82,31 +83,27 @@ class AuditLogBehavior extends Behavior
     public function events(): array
     {
         return [
-            ActiveRecord::EVENT_BEFORE_UPDATE => 'beforeUpdate',
             ActiveRecord::EVENT_AFTER_INSERT => 'afterInsert',
             ActiveRecord::EVENT_AFTER_UPDATE => 'afterUpdate',
             ActiveRecord::EVENT_AFTER_DELETE => 'afterDelete',
         ];
     }
 
-    public function beforeUpdate(): void
-    {
-        if ($this->logUpdate && $this->isLoggingEnabled()) {
-            $this->_oldAttributes = $this->owner->getOldAttributes();
-        }
-    }
-
     public function afterInsert(): void
     {
         if ($this->logInsert && $this->isLoggingEnabled()) {
-            $this->logOperation(operation: Operation::Insert);
+            $changedAttributes = $this->snapshotOnInsert
+                ? $this->getAuditService()->formatChangedAttributes([], $this->owner->getAttributes(), $this->excludeAttributes)
+                : [];
+
+            $this->logOperation(operation: Operation::Insert, changedAttributes: $changedAttributes);
         }
     }
 
     public function afterUpdate(AfterSaveEvent $event): void
     {
         if ($this->logUpdate && $this->isLoggingEnabled()) {
-            $changedAttributes = $this->getChangedAttributes();
+            $changedAttributes = $this->getChangedAttributes($event);
 
             if (!empty($changedAttributes)) {
                 $this->logOperation(
@@ -120,7 +117,11 @@ class AuditLogBehavior extends Behavior
     public function afterDelete(): void
     {
         if ($this->logDelete && $this->isLoggingEnabled()) {
-            $this->logOperation(operation: Operation::Delete);
+            $changedAttributes = $this->snapshotOnDelete
+                ? $this->getAuditService()->formatChangedAttributes($this->owner->getAttributes(), [], $this->excludeAttributes)
+                : [];
+
+            $this->logOperation(operation: Operation::Delete, changedAttributes: $changedAttributes);
         }
     }
 
@@ -146,29 +147,24 @@ class AuditLogBehavior extends Behavior
     }
 
     /**
+     * Build the diff from the values Yii reports as changed by this save.
+     *
+     * AfterSaveEvent::$changedAttributes holds the pre-save values of dirty attributes;
+     * the owner's old attributes are already reset to the new values at this point.
+     *
      * @return array<string, array<string, mixed>>
      */
-    private function getChangedAttributes(): array
+    private function getChangedAttributes(AfterSaveEvent $event): array
     {
-        $exclude = array_merge($this->systemExcludeAttributes, $this->excludeAttributes);
-        $old = $this->_oldAttributes;
-        $new = $this->owner->getAttributes();
-        $changes = [];
+        $old = $event->changedAttributes;
 
-        foreach (array_unique(array_merge(array_keys($old), array_keys($new))) as $key) {
-            if (in_array($key, $exclude, true)) {
-                continue;
-            }
-
-            $oldValue = $old[$key] ?? null;
-            $newValue = $new[$key] ?? null;
-
-            if ($oldValue !== $newValue) {
-                $changes[$key] = ['old' => $oldValue, 'new' => $newValue];
-            }
+        if ($old === []) {
+            return [];
         }
 
-        return $changes;
+        $new = array_intersect_key($this->owner->getAttributes(), $old);
+
+        return $this->getAuditService()->formatChangedAttributes($old, $new, $this->excludeAttributes);
     }
 
     /**

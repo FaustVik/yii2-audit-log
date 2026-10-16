@@ -7,6 +7,7 @@ namespace FaustVik\AuditLog\Core\Query;
 use FaustVik\AuditLog\Core\Contracts\AuditStorageInterface;
 use FaustVik\AuditLog\Core\DTO\LogEntry;
 use FaustVik\AuditLog\Core\Enums\Operation;
+use FaustVik\AuditLog\Core\Enums\SortDirection;
 use FaustVik\AuditLog\Core\Exceptions\AuditLogException;
 
 /**
@@ -77,10 +78,9 @@ final class AuditLogQuery
      */
     private int $offset = 0;
 
-    /**
-     * @var string Sort order
-     */
-    private string $orderBy = 'created_at DESC';
+    private string $orderColumn = 'created_at';
+
+    private SortDirection $orderDirection = SortDirection::Desc;
 
     public function __construct(
         private readonly AuditStorageInterface $storage,
@@ -208,11 +208,19 @@ final class AuditLogQuery
     /**
      * Set sort order
      *
-     * @param string $orderBy Sort order (e.g. 'created_at DESC')
+     * @param string $column One of AuditStorageInterface::SORTABLE_COLUMNS
+     * @throws \InvalidArgumentException if the column is not sortable
      */
-    public function orderBy(string $orderBy): self
+    public function orderBy(string $column, SortDirection $direction = SortDirection::Desc): self
     {
-        $this->orderBy = $orderBy;
+        if (!in_array($column, AuditStorageInterface::SORTABLE_COLUMNS, true)) {
+            throw new \InvalidArgumentException(
+                "Column '{$column}' is not sortable. Allowed: " . implode(', ', AuditStorageInterface::SORTABLE_COLUMNS) . '.',
+            );
+        }
+
+        $this->orderColumn = $column;
+        $this->orderDirection = $direction;
 
         return $this;
     }
@@ -235,7 +243,8 @@ final class AuditLogQuery
             dateTo: $this->dateTo,
             limit: $this->limit,
             offset: $this->offset,
-            orderBy: $this->orderBy,
+            orderColumn: $this->orderColumn,
+            orderDirection: $this->orderDirection,
         );
     }
 
@@ -256,7 +265,8 @@ final class AuditLogQuery
             dateTo: $this->dateTo,
             limit: 1,
             offset: $this->offset,
-            orderBy: $this->orderBy,
+            orderColumn: $this->orderColumn,
+            orderDirection: $this->orderDirection,
         );
 
         return $results[0] ?? null;

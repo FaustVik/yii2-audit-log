@@ -7,6 +7,7 @@ namespace FaustVik\AuditLog\Yii2\Integration;
 use FaustVik\AuditLog\Core\Contracts\AuditStorageInterface;
 use FaustVik\AuditLog\Core\DTO\LogEntry;
 use FaustVik\AuditLog\Core\Enums\DisplayMode;
+use FaustVik\AuditLog\Core\Enums\SortDirection;
 use FaustVik\AuditLog\Core\Query\AuditLogQuery;
 use yii\base\Widget;
 use yii\db\ActiveRecord;
@@ -149,7 +150,7 @@ class AuditLogWidget extends Widget
             ->forEntityId($entityId)
             ->limit($limit)
             ->offset($offset)
-            ->orderBy('created_at DESC');
+            ->orderBy('created_at', SortDirection::Desc);
 
         return $query->all();
     }
