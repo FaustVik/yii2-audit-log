@@ -281,6 +281,33 @@ foreach ($logs as $log) {
 
 ---
 
+## Ограничения
+
+Behavior подписан на события ActiveRecord, поэтому логируются только изменения через экземпляр модели (`save()`, `insert()`, `update()`, `delete()`).
+
+Не логируются:
+
+- `Model::updateAll()`, `Model::deleteAll()`, `Model::updateAllCounters()`
+- `$model->updateAttributes()` и `$model->updateCounters()` (событие `afterSave` не вызывается)
+- сырой SQL через `Yii::$app->db->createCommand()`
+
+Для массовых операций логируйте изменения вручную через `logBatch()` (см. [Пакетное логирование](#пакетное-логирование)):
+
+```php
+$ids = User::find()->select('id')->where(['status' => 'inactive'])->column();
+User::updateAll(['status' => 'banned'], ['id' => $ids]);
+
+Yii::createObject(AuditLoggerInterface::class)->logBatch(array_map(
+    fn ($id) => [
+        'entityClass' => User::class,
+        'entityId' => $id,
+        'operation' => Operation::Update,
+        'changedAttributes' => ['status' => ['old' => 'inactive', 'new' => 'banned']],
+    ],
+    $ids,
+));
+```
+
 ## Следующие шаги
 
 - [События](events.md) — Кастомизация через before/after события (включая пакетные)

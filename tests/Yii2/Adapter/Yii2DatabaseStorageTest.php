@@ -186,6 +186,43 @@ final class Yii2DatabaseStorageTest extends TestCase
     }
 
     #[Test]
+    public function saveShouldNotMangleSqlStateStringCode(): void
+    {
+        $pdoException = new \PDOException('SQLSTATE[42S02]: Base table or view not found');
+        // PDOException::$code is protected and holds the SQLSTATE string
+        (new \ReflectionProperty(\Exception::class, 'code'))->setValue($pdoException, '42S02');
+
+        $command = $this->createMock(Command::class);
+        $command->method('insert')->willReturnSelf();
+        $command->method('execute')->willThrowException($pdoException);
+
+        $db = $this->createMock(Connection::class);
+        $db->method('createCommand')->willReturn($command);
+
+        $storage = new Yii2DatabaseStorage('_log', $db);
+
+        try {
+            $storage->save(new LogEntry(
+                entityClass: 'App\Models\User',
+                entityId: 1,
+                operation: Operation::Insert,
+                userId: null,
+                userType: 'system',
+                route: null,
+                module: null,
+                ipAddress: null,
+                userAgent: null,
+                createdAt: null,
+            ));
+            $this->fail('Expected StorageException');
+        } catch (StorageException $e) {
+            $this->assertSame(0, $e->getCode());
+            $this->assertSame('42S02', $e->getPrevious()?->getCode());
+            $this->assertStringContainsString('42S02', $e->getMessage());
+        }
+    }
+
+    #[Test]
     public function saveShouldPreserveExceptionAsPrevious(): void
     {
         $entry = new LogEntry(

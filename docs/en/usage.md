@@ -281,6 +281,33 @@ foreach ($logs as $log) {
 
 ---
 
+## Limitations
+
+The behavior listens to ActiveRecord events, so only changes made through a model instance (`save()`, `insert()`, `update()`, `delete()`) are logged.
+
+Not logged:
+
+- `Model::updateAll()`, `Model::deleteAll()`, `Model::updateAllCounters()`
+- `$model->updateAttributes()` and `$model->updateCounters()` (no `afterSave` event)
+- raw SQL via `Yii::$app->db->createCommand()`
+
+For bulk operations, log the changes yourself with `logBatch()` (see [Batch Logging](#batch-logging)):
+
+```php
+$ids = User::find()->select('id')->where(['status' => 'inactive'])->column();
+User::updateAll(['status' => 'banned'], ['id' => $ids]);
+
+Yii::createObject(AuditLoggerInterface::class)->logBatch(array_map(
+    fn ($id) => [
+        'entityClass' => User::class,
+        'entityId' => $id,
+        'operation' => Operation::Update,
+        'changedAttributes' => ['status' => ['old' => 'inactive', 'new' => 'banned']],
+    ],
+    $ids,
+));
+```
+
 ## Next Steps
 
 - [Events](events.md) — Customise behaviour with before/after events (including batch)

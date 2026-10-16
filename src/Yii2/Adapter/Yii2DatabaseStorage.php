@@ -65,7 +65,7 @@ final class Yii2DatabaseStorage implements AuditStorageInterface
         } catch (\Throwable $e) {
             throw new StorageException(
                 message: 'Failed to save audit log: ' . $e->getMessage(),
-                code: (int) $e->getCode(),
+                code: is_int($e->getCode()) ? $e->getCode() : 0, // PDO codes are SQLSTATE strings like "42S02"
                 previous: $e,
             );
         }
@@ -104,7 +104,7 @@ final class Yii2DatabaseStorage implements AuditStorageInterface
 
             throw new StorageException(
                 message: 'Failed to save audit log batch: ' . $e->getMessage(),
-                code: (int) $e->getCode(),
+                code: is_int($e->getCode()) ? $e->getCode() : 0, // PDO codes are SQLSTATE strings like "42S02"
                 previous: $e,
             );
         }
